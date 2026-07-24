@@ -22,17 +22,16 @@ struct ExportPackageBuilder: ExportPackageBuilding {
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: staging) }
 
-        var allWarnings: [String] = []
         for (index, workout) in workouts.enumerated() {
             try Task.checkCancellation()
-            let folderName = ExportUtilities.safeFilename(for: workout.summary)
+            let preparedWorkout = filtered(workout, options: options)
+            let folderName = ExportUtilities.safeFilename(for: preparedWorkout.summary)
             let workoutFolder = staging.appending(path: folderName, directoryHint: .isDirectory)
-            _ = try await exporter.export(workout, formats: options.formats, to: workoutFolder)
-            let readme = packageReadme(workout)
+            _ = try await exporter.export(preparedWorkout, formats: options.formats, to: workoutFolder)
+            let readme = packageReadme(preparedWorkout)
             try Data(readme.utf8).write(to: workoutFolder.appending(path: "README.txt"), options: .atomic)
-            let manifest = try manifest(for: workoutFolder, warnings: workout.warnings)
+            let manifest = try manifest(for: workoutFolder, warnings: preparedWorkout.warnings)
             try encoded(manifest).write(to: workoutFolder.appending(path: "manifest.json"), options: .atomic)
-            allWarnings.append(contentsOf: workout.warnings)
             if index.isMultiple(of: 4) { await Task.yield() }
         }
 
@@ -63,6 +62,44 @@ struct ExportPackageBuilder: ExportPackageBuilding {
         }
         try FileManager.default.copyItem(at: staging, to: destination)
         return destination
+    }
+
+    private func filtered(_ workout: WorkoutDetail, options: ExportOptions) -> WorkoutDetail {
+        var result = workout
+        if !options.includeRawSamples {
+            result.samples = []
+            result.categorySamples = []
+        }
+        if !options.includeHeartRate {
+            result.samples.removeAll { $0.typeIdentifier == "HKQuantityTypeIdentifierHeartRate" }
+            result.summary.averageHeartRateBPM = nil
+            result.derived.averageHeartRateBPM = nil
+            result.derived.minimumHeartRateBPM = nil
+            result.derived.maximumHeartRateBPM = nil
+        }
+        if !options.includeRoute {
+            result.routes = [:]
+        }
+        if !options.includeDerivedMetrics {
+            result.derived = .empty
+        }
+        if !options.includeSourceAndDevice {
+            let redacted = SourceInfo(name: "Redacted", bundleIdentifier: "", version: nil, operatingSystemVersion: nil)
+            result.summary.source = redacted
+            result.summary.device = nil
+            result.samples = result.samples.map { sample in
+                var sample = sample
+                sample.source = redacted
+                sample.device = nil
+                return sample
+            }
+            result.categorySamples = result.categorySamples.map { sample in
+                var sample = sample
+                sample.source = redacted
+                return sample
+            }
+        }
+        return result
     }
 
     private func manifest(for directory: URL, warnings: [String]) throws -> ExportManifest {

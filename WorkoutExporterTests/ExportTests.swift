@@ -80,6 +80,35 @@ final class ExportTests: XCTestCase {
         let data = try Data(contentsOf: url)
         XCTAssertEqual(Array(data.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
     }
+
+    func testExportOptionsRemoveExcludedSensitiveData() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var options = ExportOptions()
+        options.formats = [.json]
+        options.packageAsZIP = false
+        options.includeRawSamples = false
+        options.includeRoute = false
+        options.includeSourceAndDevice = false
+        let package = try await ExportPackageBuilder().buildPackage(
+            for: [SyntheticWorkoutFactory.make(.cleanOutdoorRun)],
+            options: options,
+            to: root
+        )
+        let workoutFolder = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(at: package, includingPropertiesForKeys: nil).first
+        )
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: workoutFolder.appending(path: "workout.json"))) as? [String: Any]
+        )
+        let workout = try XCTUnwrap(object["workout"] as? [String: Any])
+        XCTAssertEqual((workout["samples"] as? [Any])?.count, 0)
+        XCTAssertEqual((workout["routes"] as? [String: Any])?.count, 0)
+        let summary = try XCTUnwrap(workout["summary"] as? [String: Any])
+        let source = try XCTUnwrap(summary["source"] as? [String: Any])
+        XCTAssertEqual(source["name"] as? String, "Redacted")
+    }
 }
 
 private final class XMLValidator: NSObject, XMLParserDelegate {
