@@ -159,15 +159,14 @@ struct ExportPackageBuilder: ExportPackageBuilding {
 
         Timestamps use ISO 8601 with fractional-second precision and an explicit UTC offset.
         Canonical distance, altitude, and speed values use meters, meters, and meters/second.
-        Raw HealthKit samples remain distinct from route-derived and smoothed values.
+        HealthKit workout statistics and raw samples are preserved without smoothing or replacement.
+        Any supplemental derived values remain separate and carry provenance.
         Provenance is recorded in JSON and relevant CSV columns.
 
         Metric settings:
         Moving threshold: \(detail.metricSettings.movingSpeedThresholdMetersPerSecond) m/s
         Route gap: \(detail.metricSettings.maximumRouteGap) s
         Maximum horizontal accuracy: \(detail.metricSettings.maximumHorizontalAccuracyMeters) m
-        Elevation noise threshold: \(detail.metricSettings.elevationNoiseThresholdMeters) m
-
         Limitations:
         HealthKit can return no accessible data when read permission is denied.
         Missing route or heart-rate data is exported as missing, never fabricated.

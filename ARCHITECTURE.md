@@ -25,14 +25,14 @@ The UI does not execute HealthKit queries. `HealthKitClient`, `WorkoutRepository
 ## Data principles
 
 - Original sample timestamps, intervals, values, units, source/device identity, safe metadata, route identifiers, and route sequence are retained.
-- HealthKit distance is never overwritten by route distance.
+- HealthKit workout distance, elevation gain, energy, heart rate, speed, and other available statistics are never smoothed or overwritten.
 - Native speeds, `CLLocation` speeds, route-derived speeds, and smoothed values have distinct provenance.
 - Low-quality points remain in raw export and carry quality flags; calculations may exclude them using documented settings.
 - Route membership is preserved so gaps and separate route objects are never silently joined.
 
 ## Metrics
 
-The deterministic engine applies configurable maximum accuracy, maximum route-gap duration, maximum plausible speed, moving-speed threshold, smoothing window, and elevation noise threshold. Explicit pause/resume events drive event-aware moving time. A separate threshold-based result is retained.
+The deterministic supplemental engine applies configurable maximum accuracy, maximum route-gap duration, maximum plausible speed, and moving-speed threshold. Explicit pause/resume events drive event-aware moving time. A separate threshold-based result is retained. Existing HealthKit workout statistics always take precedence, and elevation gain is read directly from `HKMetadataKeyElevationAscended` when present.
 
 These algorithms are Workout Exporter algorithms, not reconstructions of Apple Fitness.
 

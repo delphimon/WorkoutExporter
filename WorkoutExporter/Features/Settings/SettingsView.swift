@@ -17,17 +17,12 @@ struct SettingsView: View {
                 }
                 Section("Metric calculation") {
                     VStack(alignment: .leading) {
-                        Text("Moving threshold: \(settings.metricSettings.movingSpeedThresholdMetersPerSecond, specifier: "%.2f") m/s")
+                        Text("Moving threshold: \(MeasurementFormatterFactory.speed(settings.metricSettings.movingSpeedThresholdMetersPerSecond, preference: settings.distanceUnits))")
                         Slider(value: $settings.metricSettings.movingSpeedThresholdMetersPerSecond, in: 0.2...3, step: 0.05)
                     }
                     VStack(alignment: .leading) {
                         Text("Route gap: \(Int(settings.metricSettings.maximumRouteGap)) seconds")
                         Slider(value: $settings.metricSettings.maximumRouteGap, in: 5...120, step: 5)
-                    }
-                    VStack(alignment: .leading) {
-                        Text("Elevation smoothing: \(settings.metricSettings.elevationSmoothingWindow) points")
-                        Stepper("", value: $settings.metricSettings.elevationSmoothingWindow, in: 1...21, step: 2)
-                            .labelsHidden()
                     }
                 }
                 Section("Export defaults") {

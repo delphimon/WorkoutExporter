@@ -89,7 +89,15 @@ actor LiveHealthKitClient: HealthKitClient {
                     metadata: HealthKitMappings.safeMetadata($0.metadata)
                 )
             }
-            let statistics = normalizedStatistics(workout.allStatistics)
+            var statistics = normalizedStatistics(workout.allStatistics)
+            if let elevation = nativeElevationGain(for: workout) {
+                statistics.append(NativeStatistic(
+                    typeIdentifier: "HKMetadataKeyElevationAscended",
+                    aggregation: "metadata",
+                    value: elevation,
+                    unit: "m"
+                ))
+            }
             var detail = WorkoutDetail(
                 summary: workoutSummary,
                 events: events,
@@ -139,6 +147,7 @@ actor LiveHealthKitClient: HealthKitClient {
             endDate: workout.endDate,
             duration: workout.duration,
             totalDistanceMeters: distance,
+            elevationGainMeters: nativeElevationGain(for: workout),
             activeEnergyKilocalories: energy,
             averageHeartRateBPM: heart,
             source: HealthKitMappings.source(workout.sourceRevision),
@@ -146,6 +155,11 @@ actor LiveHealthKitClient: HealthKitClient {
             hasRoute: hasRoute,
             hasDetailedSamples: stats.isEmpty == false
         )
+    }
+
+    private func nativeElevationGain(for workout: HKWorkout) -> Double? {
+        (workout.metadata?[HKMetadataKeyElevationAscended] as? HKQuantity)?
+            .doubleValue(for: .meter())
     }
 
     private func fetchQuantitySamples(for workout: HKWorkout) async throws -> [WorkoutSample] {

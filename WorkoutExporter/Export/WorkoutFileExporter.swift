@@ -191,8 +191,8 @@ struct WorkoutFileExporter: WorkoutExporting {
                 String(split.movingTime),
                 optionalString(split.paceSecondsPerKilometer),
                 optionalString(split.speedMetersPerSecond),
-                String(split.elevationGainMeters),
-                String(split.elevationLossMeters),
+                optionalString(split.elevationGainMeters),
+                optionalString(split.elevationLossMeters),
                 optionalString(split.averageHeartRateBPM),
                 optionalString(split.maximumHeartRateBPM)
             ]

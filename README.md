@@ -46,7 +46,7 @@ HealthKit cannot prove per-type read approval. “No accessible workouts” may 
 - Read-only Health authorization
 - Reverse-chronological workout browser with search, filters, refresh, and multi-selection
 - Detail summary, route map, heart-rate and elevation charts, pace, splits, and raw data
-- Separate HealthKit and derived distance/time/elevation values
+- HealthKit workout values preserved unchanged, with supplemental derived values kept separate
 - JSON, five CSV tables, GPX 1.1, TCX, and ZIP packages
 - SHA-256 manifest, schema documentation, package README, safe filenames
 - Standard share sheet / Files handoff
@@ -64,6 +64,8 @@ xcodebuild test -project WorkoutExporter.xcodeproj \
   -scheme WorkoutExporter \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
+
+Distance, pace, speed, and elevation presentation always follow the selected metric or US customary scheme. Canonical exported raw values retain their original units and unit labels.
 
 See [TESTING.md](TESTING.md) for real-device checks and simulator limitations.
 

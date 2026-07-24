@@ -34,6 +34,7 @@ struct WorkoutSummary: Identifiable, Codable, Hashable, Sendable {
     var endDate: Date
     var duration: TimeInterval
     var totalDistanceMeters: Double?
+    var elevationGainMeters: Double?
     var activeEnergyKilocalories: Double?
     var averageHeartRateBPM: Double?
     var source: SourceInfo
@@ -130,9 +131,6 @@ struct MetricCalculationSettings: Codable, Hashable, Sendable {
     var maximumHorizontalAccuracyMeters = 50.0
     var maximumRouteGap: TimeInterval = 30
     var maximumPlausibleSpeedMetersPerSecond = 30.0
-    var speedSmoothingWindow = 5
-    var elevationSmoothingWindow = 7
-    var elevationNoiseThresholdMeters = 3.0
     var splitDistanceMeters = 1_000.0
 
     static let conservativeDefault = MetricCalculationSettings()
@@ -154,8 +152,8 @@ struct WorkoutSplit: Identifiable, Codable, Hashable, Sendable {
     var movingTime: TimeInterval
     var paceSecondsPerKilometer: Double?
     var speedMetersPerSecond: Double?
-    var elevationGainMeters: Double
-    var elevationLossMeters: Double
+    var elevationGainMeters: Double?
+    var elevationLossMeters: Double?
     var averageHeartRateBPM: Double?
     var maximumHeartRateBPM: Double?
     var startLatitude: Double?

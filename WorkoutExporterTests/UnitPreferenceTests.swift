@@ -14,4 +14,11 @@ final class UnitPreferenceTests: XCTestCase {
         XCTAssertTrue(imperial.contains("/mi"))
         XCTAssertNotEqual(metric, imperial)
     }
+
+    func testElevationAndSpeedFollowSelectedUnitScheme() {
+        XCTAssertTrue(MeasurementFormatterFactory.elevation(100, preference: .metric).contains("m"))
+        XCTAssertTrue(MeasurementFormatterFactory.elevation(100, preference: .usCustomary).contains("ft"))
+        XCTAssertTrue(MeasurementFormatterFactory.speed(1, preference: .metric).contains("km/h"))
+        XCTAssertTrue(MeasurementFormatterFactory.speed(1, preference: .usCustomary).contains("mph"))
+    }
 }

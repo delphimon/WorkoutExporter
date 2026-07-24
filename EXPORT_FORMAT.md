@@ -1,6 +1,6 @@
 # Export Format 1.0.0
 
-Canonical timestamps are ISO 8601 strings with fractional seconds and an explicit UTC offset. Canonical units are meters (`m`), seconds (`s`), meters per second (`m/s`), beats per minute (`count/min`), watts (`W`), and kilocalories (`kcal`). Presentation-unit preferences never alter canonical raw values.
+Canonical timestamps are ISO 8601 strings with fractional seconds and an explicit UTC offset. Every raw value retains its explicit HealthKit unit. Canonical normalized route units are meters (`m`), seconds (`s`), and meters per second (`m/s`). Presentation uses the selected metric or US customary scheme without altering stored/exported raw values.
 
 ## JSON
 
@@ -19,7 +19,7 @@ Top-level fields:
 
 | Field | Meaning |
 |---|---|
-| `summary` | ID, raw activity identifier/readable name, dates, duration, HealthKit distance/energy/heart-rate summaries, source/device, availability flags |
+| `summary` | ID, raw activity identifier/readable name, dates, duration, HealthKit distance/elevation gain/energy/heart-rate summaries, source/device, availability flags |
 | `events` | Pause, resume, lap, segment, marker, or unknown events with intervals and metadata |
 | `activities` | Multisport/structured activity segments |
 | `statistics` | HealthKit statistic type, aggregation, value, and unit |

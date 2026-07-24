@@ -9,8 +9,11 @@ final class MetricEngineTests: XCTestCase {
         XCTAssertGreaterThan(metrics.routeDistanceMeters?.value ?? 0, 1_000)
         XCTAssertGreaterThan(metrics.speedThresholdMovingTime?.value ?? 0, 0)
         XCTAssertGreaterThan(metrics.averageSpeedMetersPerSecond?.value ?? 0, 0)
-        XCTAssertNotNil(metrics.smoothedElevationGainMeters)
-        XCTAssertEqual(metrics.averageHeartRateBPM?.provenance, .healthKitSample)
+        XCTAssertEqual(metrics.rawElevationGainMeters?.value, detail.summary.elevationGainMeters)
+        XCTAssertEqual(metrics.rawElevationGainMeters?.provenance, .healthKitStatistic)
+        XCTAssertNil(metrics.smoothedElevationGainMeters)
+        XCTAssertEqual(metrics.averageHeartRateBPM?.value, detail.summary.averageHeartRateBPM)
+        XCTAssertEqual(metrics.averageHeartRateBPM?.provenance, .healthKitStatistic)
         XCTAssertFalse(metrics.splits.isEmpty)
     }
 

@@ -50,7 +50,7 @@ struct WorkoutDetailView: View {
                 case .map: RouteMapSection(detail: detail)
                 case .heartRate: HeartRateSection(detail: detail)
                 case .pace: PaceSection(detail: detail, units: settings.distanceUnits)
-                case .elevation: ElevationSection(detail: detail)
+                case .elevation: ElevationSection(detail: detail, units: settings.distanceUnits)
                 case .splits: SplitsSection(detail: detail, units: settings.distanceUnits)
                 case .raw: RawDataSection(detail: detail)
                 }
@@ -78,11 +78,10 @@ private struct SummarySection: View {
     var body: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             MetricCard("Duration", MeasurementFormatterFactory.duration(detail.summary.duration), "clock")
-            MetricCard("HealthKit Distance", MeasurementFormatterFactory.distance(detail.summary.totalDistanceMeters, preference: units), "figure.run")
-            MetricCard("GPS Distance", MeasurementFormatterFactory.distance(detail.derived.routeDistanceMeters?.value, preference: units), "map")
+            MetricCard("Workout Distance", MeasurementFormatterFactory.distance(detail.summary.totalDistanceMeters, preference: units), "figure.run")
             MetricCard("Moving Time", MeasurementFormatterFactory.duration(detail.derived.eventAwareMovingTime?.value ?? 0), "pause.circle")
             MetricCard("Average Heart Rate", detail.derived.averageHeartRateBPM.map { "\(Int($0.value.rounded())) bpm" } ?? "—", "heart")
-            MetricCard("Elevation Gain", detail.derived.smoothedElevationGainMeters.map { "\(Int($0.value.rounded())) m" } ?? "—", "mountain.2")
+            MetricCard("Workout Elevation Gain", MeasurementFormatterFactory.elevation(detail.summary.elevationGainMeters, preference: units), "mountain.2")
         }
         .padding()
 
@@ -191,7 +190,7 @@ private struct PaceSection: View {
     }
 
     private var elapsedPace: String {
-        let distance = detail.derived.routeDistanceMeters?.value
+        let distance = detail.summary.totalDistanceMeters
         let pace = distance.flatMap { value in
             value > 0 ? detail.summary.duration / (value / 1_000) : nil
         }
@@ -200,7 +199,7 @@ private struct PaceSection: View {
 
     private var movingPace: String {
         guard let time = detail.derived.speedThresholdMovingTime?.value,
-              let distance = detail.derived.routeDistanceMeters?.value,
+              let distance = detail.summary.totalDistanceMeters,
               distance > 0 else {
             return "—"
         }
@@ -213,24 +212,35 @@ private struct PaceSection: View {
 
 private struct ElevationSection: View {
     let detail: WorkoutDetail
+    let units: DistanceUnitPreference
 
     var body: some View {
         if detail.routePoints.isEmpty {
             ContentUnavailableView("No Elevation Data", systemImage: "mountain.2")
         } else {
             Chart(detail.routePoints) { point in
-                AreaMark(x: .value("Time", point.timestamp), y: .value("Altitude", point.altitudeMeters))
+                AreaMark(
+                    x: .value("Time", point.timestamp),
+                    y: .value("Altitude", displayAltitude(point.altitudeMeters))
+                )
                     .foregroundStyle(.green.opacity(0.5))
             }
-            .chartYAxisLabel("meters")
+            .chartYAxisLabel(units == .metric ? "meters" : "feet")
             .frame(height: 320)
             .padding()
-            HStack {
-                MetricCard("Raw Gain", "\(Int(detail.derived.rawElevationGainMeters?.value.rounded() ?? 0)) m", "waveform.path")
-                MetricCard("Smoothed Gain", "\(Int(detail.derived.smoothedElevationGainMeters?.value.rounded() ?? 0)) m", "mountain.2")
-            }
-            .padding(.horizontal)
+            MetricCard(
+                "Recorded Workout Gain",
+                MeasurementFormatterFactory.elevation(detail.summary.elevationGainMeters, preference: units),
+                "mountain.2"
+            )
+            .padding()
         }
+    }
+
+    private func displayAltitude(_ meters: Double) -> Double {
+        Measurement(value: meters, unit: UnitLength.meters)
+            .converted(to: units.elevationUnit)
+            .value
     }
 }
 

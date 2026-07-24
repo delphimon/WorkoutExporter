@@ -165,6 +165,7 @@ enum SyntheticWorkoutFactory {
             endDate: end,
             duration: duration,
             totalDistanceMeters: route.isEmpty ? nil : healthDistance,
+            elevationGainMeters: route.isEmpty ? nil : (scenario == .hikeWithStops ? 420 : 35),
             activeEnergyKilocalories: 540,
             averageHeartRateBPM: heartRate.isEmpty ? nil : 146,
             source: source,
@@ -194,6 +195,7 @@ enum SyntheticWorkoutFactory {
             activities: activities,
             statistics: [
                 NativeStatistic(typeIdentifier: "HKQuantityTypeIdentifierDistanceWalkingRunning", aggregation: "sum", value: healthDistance, unit: "m"),
+                NativeStatistic(typeIdentifier: "HKMetadataKeyElevationAscended", aggregation: "metadata", value: scenario == .hikeWithStops ? 420 : 35, unit: "m"),
                 NativeStatistic(typeIdentifier: "HKQuantityTypeIdentifierHeartRate", aggregation: "average", value: 146, unit: "count/min")
             ],
             samples: heartRate,
