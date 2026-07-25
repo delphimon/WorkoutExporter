@@ -53,6 +53,21 @@ final class WorkoutListViewModelTests: XCTestCase {
         XCTAssertEqual(model.workouts.count, 120)
         XCTAssertFalse(model.canLoadMore)
     }
+
+    func testPaginationFailureKeepsLoadedWorkoutsAndLimit() async {
+        let workouts = (0..<60).map {
+            SyntheticWorkoutFactory.make(.cleanOutdoorRun, index: $0).summary
+        }
+        let model = WorkoutListViewModel()
+        await model.load(using: FailingPaginationClient(workouts: workouts))
+
+        await model.loadMore(using: FailingPaginationClient(workouts: workouts))
+
+        XCTAssertEqual(model.state, .loaded)
+        XCTAssertEqual(model.workouts.count, 50)
+        XCTAssertEqual(model.requestedLimit, 50)
+        XCTAssertNotNil(model.paginationError)
+    }
 }
 
 private actor ListClient: HealthKitClient {
@@ -67,6 +82,31 @@ private actor ListClient: HealthKitClient {
 
     func fetchWorkouts(limit: Int) async throws -> [WorkoutSummary] {
         Array(workouts.prefix(limit))
+    }
+
+    func fetchWorkoutDetail(
+        id: UUID,
+        settings: MetricCalculationSettings
+    ) async throws -> WorkoutDetail {
+        throw WorkoutExporterError.noAccessibleData
+    }
+}
+
+private actor FailingPaginationClient: HealthKitClient {
+    nonisolated let isHealthDataAvailable = true
+    let workouts: [WorkoutSummary]
+
+    init(workouts: [WorkoutSummary]) {
+        self.workouts = workouts
+    }
+
+    func requestReadAuthorization() async throws {}
+
+    func fetchWorkouts(limit: Int) async throws -> [WorkoutSummary] {
+        guard limit <= 50 else {
+            throw WorkoutExporterError.queryFailure("Synthetic pagination failure")
+        }
+        return Array(workouts.prefix(limit))
     }
 
     func fetchWorkoutDetail(

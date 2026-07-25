@@ -29,9 +29,18 @@ protocol WorkoutExporting: Sendable {
     ) async throws -> [URL]
 }
 
+struct WorkoutExportRequest: Sendable {
+    let id: UUID
+    let load: @Sendable () async throws -> WorkoutDetail
+
+    static func loaded(_ detail: WorkoutDetail) -> WorkoutExportRequest {
+        WorkoutExportRequest(id: detail.id) { detail }
+    }
+}
+
 protocol ExportPackageBuilding: Sendable {
     func buildPackage(
-        for workouts: [WorkoutDetail],
+        for requests: [WorkoutExportRequest],
         options: ExportOptions,
         to directory: URL,
         progress: @escaping @Sendable (ExportProgress) async -> Void
@@ -49,6 +58,28 @@ extension WorkoutExporting {
 }
 
 extension ExportPackageBuilding {
+    func buildPackage(
+        for requests: [WorkoutExportRequest],
+        options: ExportOptions,
+        to directory: URL
+    ) async throws -> URL {
+        try await buildPackage(for: requests, options: options, to: directory) { _ in }
+    }
+
+    func buildPackage(
+        for workouts: [WorkoutDetail],
+        options: ExportOptions,
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress) async -> Void
+    ) async throws -> URL {
+        try await buildPackage(
+            for: workouts.map(WorkoutExportRequest.loaded),
+            options: options,
+            to: directory,
+            progress: progress
+        )
+    }
+
     func buildPackage(
         for workouts: [WorkoutDetail],
         options: ExportOptions,

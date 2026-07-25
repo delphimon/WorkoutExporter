@@ -22,8 +22,6 @@
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Workout Exporter reads workouts and associated sensor data so you can inspect and export them. Data stays on this device unless you explicitly share it.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>Workout Exporter does not write Health data.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

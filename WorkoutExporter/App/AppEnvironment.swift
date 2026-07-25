@@ -67,7 +67,7 @@ final class AppEnvironment {
 #if DEBUG
 private actor UITestFailingPackageBuilder: ExportPackageBuilding {
     func buildPackage(
-        for workouts: [WorkoutDetail],
+        for requests: [WorkoutExportRequest],
         options: ExportOptions,
         to directory: URL,
         progress: @escaping @Sendable (ExportProgress) async -> Void

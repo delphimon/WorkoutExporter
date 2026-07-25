@@ -30,6 +30,16 @@ enum ExportUtilities {
         return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
 
+    static func spreadsheetSafeCSV(_ value: String) -> String {
+        let trimmed = value.drop(while: { $0 == " " || $0 == "\t" })
+        let protected = if let first = trimmed.first, ["=", "+", "-", "@"].contains(first) {
+            "'" + value
+        } else {
+            value
+        }
+        return csv(protected)
+    }
+
     static func xml(_ value: String) -> String {
         value
             .replacingOccurrences(of: "&", with: "&amp;")
@@ -67,5 +77,37 @@ enum ExportUtilities {
         guard let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]),
               let text = String(data: data, encoding: .utf8) else { return "{}" }
         return text
+    }
+
+    static func createProtectedDirectory(at url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try applyCompleteFileProtection(to: url)
+    }
+
+    static func writeProtected(_ data: Data, to url: URL) throws {
+#if os(iOS)
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+#else
+        try data.write(to: url, options: .atomic)
+#endif
+    }
+
+    static func applyCompleteFileProtection(to url: URL) throws {
+#if os(iOS)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
+#endif
+    }
+
+    static func applyCompleteFileProtectionRecursively(to root: URL) throws {
+        try applyCompleteFileProtection(to: root)
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else {
+            return
+        }
+        for case let url as URL in enumerator {
+            try applyCompleteFileProtection(to: url)
+        }
     }
 }

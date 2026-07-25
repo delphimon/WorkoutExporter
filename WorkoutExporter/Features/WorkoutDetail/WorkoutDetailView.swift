@@ -30,7 +30,7 @@ struct WorkoutDetailView: View {
         }
         .sheet(isPresented: $showExport) {
             if case .loaded(let detail) = model.state {
-                ExportView(details: [detail])
+                ExportView(requests: [.loaded(detail)])
             }
         }
         .task {
@@ -93,7 +93,6 @@ private struct SummarySection: View {
             MetricCard("Moving Time", MeasurementFormatterFactory.duration(detail.derived.eventAwareMovingTime?.value ?? 0), "pause.circle")
             MetricCard("Average Heart Rate", detail.derived.averageHeartRateBPM.map { "\(Int($0.value.rounded())) bpm" } ?? "—", "heart")
             MetricCard("Workout Elevation Gain", MeasurementFormatterFactory.elevation(detail.summary.elevationGainMeters, preference: units), "mountain.2")
-            MetricCard("Route-Filtered Gain", MeasurementFormatterFactory.elevation(detail.derived.smoothedElevationGainMeters?.value, preference: units), "chart.line.uptrend.xyaxis")
         }
         .padding()
 
@@ -235,11 +234,11 @@ private struct PaceSection: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            if !displayMetrics.isEmpty {
-                Chart(displayMetrics) { point in
+            if !displayPoints.isEmpty {
+                Chart(displayPoints) { point in
                     LineMark(
                         x: .value("Time", point.timestamp),
-                        y: .value("Speed", displaySpeed(point.smoothedSpeedMetersPerSecond))
+                        y: .value("Speed", displaySpeed(point.speedMetersPerSecond))
                     )
                 }
                 .chartXSelection(value: $selectedDate)
@@ -280,8 +279,11 @@ private struct PaceSection: View {
         )
     }
 
-    private var displayMetrics: [RouteMetricPoint] {
-        downsample(detail.derived.routeMetrics ?? [], limit: 1_200)
+    private var displayPoints: [RoutePoint] {
+        downsample(
+            detail.routePoints.filter { $0.speedMetersPerSecond != nil },
+            limit: 1_200
+        )
     }
 
     private func displaySpeed(_ metersPerSecond: Double?) -> Double {
@@ -318,15 +320,6 @@ private struct ElevationSection: View {
                 "mountain.2"
             )
             .padding()
-            MetricCard(
-                "Route-Filtered Gain",
-                MeasurementFormatterFactory.elevation(
-                    detail.derived.smoothedElevationGainMeters?.value,
-                    preference: units
-                ),
-                "chart.line.uptrend.xyaxis"
-            )
-            .padding(.horizontal)
         }
     }
 

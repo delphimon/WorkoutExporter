@@ -9,7 +9,7 @@ struct WorkoutFileExporter: WorkoutExporting {
     ) async throws -> [URL] {
         try Task.checkCancellation()
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try ExportUtilities.createProtectedDirectory(at: directory)
             var output: [URL] = []
             for format in formats.sorted(by: { $0.rawValue < $1.rawValue }) {
                 try Task.checkCancellation()
@@ -17,7 +17,7 @@ struct WorkoutFileExporter: WorkoutExporting {
                 switch format {
                 case .json:
                     let url = directory.appending(path: "workout.json")
-                    try json(detail).write(to: url, options: .atomic)
+                    try ExportUtilities.writeProtected(json(detail), to: url)
                     output.append(url)
                 case .csv:
                     output.append(contentsOf: try writeCSVFiles(detail, to: directory))
@@ -204,24 +204,24 @@ struct WorkoutFileExporter: WorkoutExporting {
         for (index, sample) in detail.samples.enumerated() {
             try checkCancellation(at: index)
             let columns = [
-                detail.id.uuidString,
-                sample.typeIdentifier,
-                ExportUtilities.date(sample.startDate),
-                ExportUtilities.date(sample.endDate),
-                String(sample.value),
-                sample.unit,
-                sample.source.name,
-                sample.source.bundleIdentifier,
-                sample.device?.name ?? "",
-                sample.provenance.rawValue,
-                ExportUtilities.metadataJSON(sample.metadata)
+                ExportUtilities.csv(detail.id.uuidString),
+                ExportUtilities.csv(sample.typeIdentifier),
+                ExportUtilities.csv(ExportUtilities.date(sample.startDate)),
+                ExportUtilities.csv(ExportUtilities.date(sample.endDate)),
+                ExportUtilities.csv(String(sample.value)),
+                ExportUtilities.csv(sample.unit),
+                ExportUtilities.spreadsheetSafeCSV(sample.source.name),
+                ExportUtilities.spreadsheetSafeCSV(sample.source.bundleIdentifier),
+                ExportUtilities.spreadsheetSafeCSV(sample.device?.name ?? ""),
+                ExportUtilities.csv(sample.provenance.rawValue),
+                ExportUtilities.csv(ExportUtilities.metadataJSON(sample.metadata))
             ]
-            try writer.write(columns.map(ExportUtilities.csv).joined(separator: ",") + "\r\n")
+            try writer.write(columns.joined(separator: ",") + "\r\n")
         }
     }
 
     private func writeRouteCSV(_ detail: WorkoutDetail, to writer: any ExportTextWriting) throws {
-        try writer.write("workout_id,route_id,sequence,timestamp,latitude,longitude,altitude_m,horizontal_accuracy_m,vertical_accuracy_m,speed_mps,speed_accuracy_mps,course_deg,course_accuracy_deg,segment_distance_m,cumulative_distance_m,derived_speed_mps,smoothed_speed_mps,grade,quality_flags\r\n")
+        try writer.write("workout_id,route_id,sequence,timestamp,latitude,longitude,altitude_m,horizontal_accuracy_m,vertical_accuracy_m,speed_mps,speed_accuracy_mps,course_deg,course_accuracy_deg,segment_distance_m,cumulative_distance_m,derived_speed_mps,grade,quality_flags\r\n")
         let routeMetrics = Dictionary(
             uniqueKeysWithValues: (detail.derived.routeMetrics ?? []).map { ($0.routePointID, $0) }
         )
@@ -237,7 +237,6 @@ struct WorkoutFileExporter: WorkoutExporting {
                 optionalString(metric?.segmentDistanceMeters),
                 optionalString(metric?.cumulativeDistanceMeters),
                 optionalString(metric?.derivedSpeedMetersPerSecond),
-                optionalString(metric?.smoothedSpeedMetersPerSecond),
                 optionalString(metric?.grade),
                 point.qualityFlags.joined(separator: "|")
             ]
@@ -422,6 +421,7 @@ private final class FileExportTextWriter: ExportTextWriting {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             throw WorkoutExporterError.fileWriteFailure("Could not create \(url.lastPathComponent).")
         }
+        try ExportUtilities.applyCompleteFileProtection(to: url)
         handle = try FileHandle(forWritingTo: url)
         buffer.reserveCapacity(Self.bufferLimit)
     }

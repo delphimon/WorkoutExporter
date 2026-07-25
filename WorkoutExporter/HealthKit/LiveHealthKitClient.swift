@@ -5,6 +5,7 @@ import HealthKit
 actor LiveHealthKitClient: HealthKitClient {
     private let healthStore: HKHealthStore
     private let metricCalculator: WorkoutMetricCalculating
+    private var routeAvailability: [UUID: Bool] = [:]
 
     nonisolated var isHealthDataAvailable: Bool {
         HKHealthStore.isHealthDataAvailable()
@@ -133,10 +134,15 @@ actor LiveHealthKitClient: HealthKitClient {
         let heartType = HKQuantityType(.heartRate)
         let heart = workout.statistics(for: heartType)?.averageQuantity()?
             .doubleValue(for: .count().unitDivided(by: .minute()))
-        let hasRoute = if let knownRoutes {
-            knownRoutes
+        let hasRoute: Bool
+        if let knownRoutes {
+            hasRoute = knownRoutes
+            routeAvailability[workout.uuid] = knownRoutes
+        } else if let cached = routeAvailability[workout.uuid] {
+            hasRoute = cached
         } else {
-            try await routeSamples(for: workout, limit: 1).isEmpty == false
+            hasRoute = try await routeSamples(for: workout, limit: 1).isEmpty == false
+            routeAvailability[workout.uuid] = hasRoute
         }
 
         return WorkoutSummary(

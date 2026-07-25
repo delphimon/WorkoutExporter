@@ -14,11 +14,6 @@ struct SettingsView: View {
                     Picker("Distance, pace, and elevation", selection: $settings.distanceUnits) {
                         ForEach(DistanceUnitPreference.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
-                    Picker("Temperature", selection: $settings.temperatureUnits) {
-                        ForEach(TemperatureUnitPreference.allCases, id: \.self) {
-                            Text($0.label).tag($0)
-                        }
-                    }
                 }
                 Section("Metric calculation") {
                     VStack(alignment: .leading) {
@@ -36,26 +31,6 @@ struct SettingsView: View {
                     VStack(alignment: .leading) {
                         Text("Route gap: \(Int(settings.metricSettings.maximumRouteGap)) seconds")
                         Slider(value: $settings.metricSettings.maximumRouteGap, in: 5...120, step: 5)
-                    }
-                    Stepper(
-                        "Speed smoothing window: \(settings.metricSettings.routeSmoothingWindow) points",
-                        value: $settings.metricSettings.routeSmoothingWindow,
-                        in: 1...21,
-                        step: 2
-                    )
-                    VStack(alignment: .leading) {
-                        Text(
-                            "Elevation noise threshold: "
-                                + MeasurementFormatterFactory.elevation(
-                                    settings.metricSettings.elevationNoiseThresholdMeters,
-                                    preference: settings.distanceUnits
-                                )
-                        )
-                        Slider(
-                            value: $settings.metricSettings.elevationNoiseThresholdMeters,
-                            in: 0...10,
-                            step: 0.5
-                        )
                     }
                 }
                 Section("Splits") {
@@ -143,7 +118,7 @@ struct SettingsView: View {
                             Text($0.label).tag($0)
                         }
                     }
-                    LabeledContent("Schema version", value: "1.0.0")
+                    LabeledContent("Schema version", value: ExportSchema.version)
                 }
                 Section("Privacy") {
                     Button("How your data is handled") { showPrivacy = true }

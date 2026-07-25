@@ -11,14 +11,6 @@ enum DistanceUnitPreference: String, CaseIterable, Codable, Sendable {
     var paceUnitLabel: String { self == .metric ? "km" : "mi" }
 }
 
-enum TemperatureUnitPreference: String, CaseIterable, Codable, Sendable {
-    case celsius
-    case fahrenheit
-
-    var label: String { self == .celsius ? "Celsius" : "Fahrenheit" }
-    var unit: UnitTemperature { self == .celsius ? .celsius : .fahrenheit }
-}
-
 enum ExportFilenameFormat: String, CaseIterable, Codable, Sendable {
     case dateActivityIdentifier
     case activityDateIdentifier

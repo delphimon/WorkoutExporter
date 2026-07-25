@@ -1,5 +1,9 @@
 import Foundation
 
+enum ExportSchema {
+    static let version = "1.1.0"
+}
+
 enum ExportFormat: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case json
     case csv
@@ -12,13 +16,11 @@ enum ExportFormat: String, Codable, CaseIterable, Hashable, Identifiable, Sendab
 
 struct ExportOptions: Codable, Hashable, Sendable {
     var formats: Set<ExportFormat> = Set(ExportFormat.allCases)
-    var units: DistanceUnitPreference = .metric
     var includeRawSamples = true
     var includeDerivedMetrics = true
     var includeHeartRate = true
     var includeRoute = true
     var includeSourceAndDevice = true
-    var movingTimeMethod: MovingTimeMethod = .eventAware
     var filenameFormat: ExportFilenameFormat = .dateActivityIdentifier
     var packageAsZIP = true
 }
@@ -66,7 +68,7 @@ struct ExportFileEntry: Codable, Hashable, Sendable {
 
 struct ExportManifest: Codable, Hashable, Sendable {
     var schemaName = "com.delphimon.workout-export-package"
-    var schemaVersion = "1.0.0"
+    var schemaVersion = ExportSchema.version
     var createdAt: Date
     var exporterVersion: String
     var files: [ExportFileEntry]
@@ -76,7 +78,7 @@ struct ExportManifest: Codable, Hashable, Sendable {
 
 struct WorkoutExportEnvelope: Codable, Hashable, Sendable {
     var schemaName = "com.delphimon.workout-export"
-    var schemaVersion = "1.0.0"
+    var schemaVersion = ExportSchema.version
     var exporterVersion: String
     var exportedAt: Date
     var timeZoneIdentifier: String

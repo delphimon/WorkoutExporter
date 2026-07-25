@@ -8,7 +8,6 @@ final class UserSettings {
         didSet { defaults.set(distanceUnits.rawValue, forKey: Keys.distanceUnits) }
     }
     var metricSettings: MetricCalculationSettings
-    var temperatureUnits: TemperatureUnitPreference
     var filenameFormat: ExportFilenameFormat
     var includeRawSamples: Bool
     var includeSourceMetadata: Bool
@@ -20,9 +19,6 @@ final class UserSettings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         distanceUnits = DistanceUnitPreference(rawValue: defaults.string(forKey: Keys.distanceUnits) ?? "") ?? .metric
-        temperatureUnits = TemperatureUnitPreference(
-            rawValue: defaults.string(forKey: Keys.temperatureUnits) ?? ""
-        ) ?? .celsius
         filenameFormat = ExportFilenameFormat(
             rawValue: defaults.string(forKey: Keys.filenameFormat) ?? ""
         ) ?? .dateActivityIdentifier
@@ -44,7 +40,6 @@ final class UserSettings {
     }
 
     func persist() {
-        defaults.set(temperatureUnits.rawValue, forKey: Keys.temperatureUnits)
         defaults.set(filenameFormat.rawValue, forKey: Keys.filenameFormat)
         defaults.set(includeRawSamples, forKey: Keys.includeRawSamples)
         defaults.set(includeSourceMetadata, forKey: Keys.includeSourceMetadata)
@@ -55,7 +50,6 @@ final class UserSettings {
 
     private enum Keys {
         static let distanceUnits = "distanceUnits"
-        static let temperatureUnits = "temperatureUnits"
         static let filenameFormat = "filenameFormat"
         static let includeRawSamples = "includeRawSamples"
         static let includeSourceMetadata = "includeSourceMetadata"

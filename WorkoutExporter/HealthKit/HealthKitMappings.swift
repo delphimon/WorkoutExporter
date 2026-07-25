@@ -104,7 +104,7 @@ enum HealthKitMappings {
             case let value as NSNumber: result[pair.key] = value.stringValue
             case let value as Date: result[pair.key] = value.formatted(.iso8601)
             case let value as HKQuantity: result[pair.key] = value.description
-            default: result[pair.key] = String(describing: pair.value)
+            default: break
             }
         }
     }

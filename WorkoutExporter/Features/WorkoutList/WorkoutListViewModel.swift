@@ -49,6 +49,7 @@ final class WorkoutListViewModel {
     var isSelecting = false
     private(set) var requestedLimit = 50
     private(set) var canLoadMore = true
+    private(set) var paginationError: String?
 
     var activityOptions: [String] {
         ["All"] + Set(workouts.map(\.activityName)).sorted()
@@ -86,6 +87,7 @@ final class WorkoutListViewModel {
 
     func load(using client: any HealthKitClient, resetLimit: Bool = true) async {
         if resetLimit { requestedLimit = 50 }
+        paginationError = nil
         state = .loading
         do {
             let loaded = try await client.fetchWorkouts(limit: requestedLimit)
@@ -99,13 +101,15 @@ final class WorkoutListViewModel {
 
     func loadMore(using client: any HealthKitClient) async {
         guard canLoadMore, state == .loaded else { return }
-        requestedLimit += 50
+        let nextLimit = requestedLimit + 50
+        paginationError = nil
         do {
-            let loaded = try await client.fetchWorkouts(limit: requestedLimit)
+            let loaded = try await client.fetchWorkouts(limit: nextLimit)
             workouts = loaded
-            canLoadMore = loaded.count == requestedLimit
+            requestedLimit = nextLimit
+            canLoadMore = loaded.count == nextLimit
         } catch {
-            state = .failed(error.localizedDescription)
+            paginationError = error.localizedDescription
         }
     }
 

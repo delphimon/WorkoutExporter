@@ -9,10 +9,13 @@ final class MetricEngineTests: XCTestCase {
         XCTAssertGreaterThan(metrics.routeDistanceMeters?.value ?? 0, 1_000)
         XCTAssertGreaterThan(metrics.speedThresholdMovingTime?.value ?? 0, 0)
         XCTAssertGreaterThan(metrics.averageSpeedMetersPerSecond?.value ?? 0, 0)
+        XCTAssertEqual(
+            metrics.maximumSpeedMetersPerSecond?.value,
+            detail.routePoints.compactMap(\.speedMetersPerSecond).max()
+        )
+        XCTAssertEqual(metrics.maximumSpeedMetersPerSecond?.provenance, .location)
         XCTAssertEqual(metrics.rawElevationGainMeters?.value, detail.summary.elevationGainMeters)
         XCTAssertEqual(metrics.rawElevationGainMeters?.provenance, .healthKitStatistic)
-        XCTAssertEqual(metrics.smoothedElevationGainMeters?.provenance, .smoothedRouteDerived)
-        XCTAssertGreaterThanOrEqual(metrics.smoothedElevationGainMeters?.value ?? -1, 0)
         XCTAssertEqual(metrics.averageHeartRateBPM?.value, detail.summary.averageHeartRateBPM)
         XCTAssertEqual(metrics.averageHeartRateBPM?.provenance, .healthKitStatistic)
         XCTAssertEqual(metrics.routeMetrics?.count, detail.routePoints.count)
@@ -26,14 +29,13 @@ final class MetricEngineTests: XCTestCase {
         XCTAssertFalse(metrics.splits.isEmpty)
     }
 
-    func testHikeProducesSeparateFilteredElevationWithoutReplacingNativeGain() async throws {
+    func testHikePreservesNativeElevationGain() async throws {
         let detail = SyntheticWorkoutFactory.make(.hikeWithStops)
         let metrics = try await WorkoutMetricCalculator().calculate(detail: detail)
 
         XCTAssertEqual(metrics.rawElevationGainMeters?.value, 420)
         XCTAssertEqual(metrics.rawElevationGainMeters?.provenance, .healthKitStatistic)
-        XCTAssertGreaterThan(metrics.smoothedElevationGainMeters?.value ?? 0, 0)
-        XCTAssertEqual(metrics.smoothedElevationGainMeters?.provenance, .smoothedRouteDerived)
+        XCTAssertEqual(detail.summary.elevationGainMeters, 420)
     }
 
     func testNativeWorkoutValuesRemainUnchangedWhenDerivedValuesDiffer() async throws {
@@ -71,7 +73,6 @@ final class MetricEngineTests: XCTestCase {
         XCTAssertEqual(settings.movingSpeedThresholdMetersPerSecond, 1.25)
         XCTAssertEqual(settings.minimumStoppedDuration, 5)
         XCTAssertEqual(settings.splitMode, .distance)
-        XCTAssertEqual(settings.routeSmoothingWindow, 5)
         XCTAssertEqual(settings.heartRateZones.method, .percentMaximum)
     }
 

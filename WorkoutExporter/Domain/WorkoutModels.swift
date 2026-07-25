@@ -5,7 +5,6 @@ enum DataProvenance: String, Codable, Sendable {
     case healthKitStatistic
     case location
     case routeDerived
-    case smoothedRouteDerived
     case userConfigured
 }
 
@@ -119,11 +118,6 @@ struct NativeStatistic: Identifiable, Codable, Hashable, Sendable {
     var unit: String
 }
 
-enum MovingTimeMethod: String, Codable, CaseIterable, Sendable {
-    case eventAware
-    case speedThreshold
-}
-
 enum SplitMode: String, Codable, CaseIterable, Sendable {
     case distance
     case elapsedTime
@@ -152,8 +146,6 @@ struct MetricCalculationSettings: Codable, Hashable, Sendable {
     var splitDistanceMeters = 1_000.0
     var splitMode: SplitMode = .distance
     var splitElapsedTime: TimeInterval = 600
-    var routeSmoothingWindow = 5
-    var elevationNoiseThresholdMeters = 3.0
     var heartRateZones = HeartRateZoneSettings()
 
     static let conservativeDefault = MetricCalculationSettings()
@@ -168,8 +160,6 @@ struct MetricCalculationSettings: Codable, Hashable, Sendable {
         case splitDistanceMeters
         case splitMode
         case splitElapsedTime
-        case routeSmoothingWindow
-        case elevationNoiseThresholdMeters
         case heartRateZones
     }
 
@@ -203,12 +193,6 @@ struct MetricCalculationSettings: Codable, Hashable, Sendable {
         splitElapsedTime = try container.decodeIfPresent(
             TimeInterval.self, forKey: .splitElapsedTime
         ) ?? defaults.splitElapsedTime
-        routeSmoothingWindow = try container.decodeIfPresent(
-            Int.self, forKey: .routeSmoothingWindow
-        ) ?? defaults.routeSmoothingWindow
-        elevationNoiseThresholdMeters = try container.decodeIfPresent(
-            Double.self, forKey: .elevationNoiseThresholdMeters
-        ) ?? defaults.elevationNoiseThresholdMeters
         heartRateZones = try container.decodeIfPresent(
             HeartRateZoneSettings.self, forKey: .heartRateZones
         ) ?? defaults.heartRateZones
@@ -250,9 +234,7 @@ struct RouteMetricPoint: Identifiable, Codable, Hashable, Sendable {
     var segmentDistanceMeters: Double
     var cumulativeDistanceMeters: Double
     var derivedSpeedMetersPerSecond: Double?
-    var smoothedSpeedMetersPerSecond: Double?
     var rawPaceSecondsPerKilometer: Double?
-    var smoothedPaceSecondsPerKilometer: Double?
     var grade: Double?
     var verticalSpeedMetersPerSecond: Double?
     var provenance: DataProvenance
@@ -273,7 +255,6 @@ struct DerivedMetrics: Codable, Hashable, Sendable {
     var averageSpeedMetersPerSecond: MetricValue? = nil
     var maximumSpeedMetersPerSecond: MetricValue? = nil
     var rawElevationGainMeters: MetricValue? = nil
-    var smoothedElevationGainMeters: MetricValue? = nil
     var elevationLossMeters: MetricValue? = nil
     var minimumAltitudeMeters: MetricValue? = nil
     var maximumAltitudeMeters: MetricValue? = nil

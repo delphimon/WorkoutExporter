@@ -93,13 +93,24 @@ struct WorkoutListView: View {
                     .accessibilityIdentifier("workout-row-\(workout.id.uuidString)")
                 }
                 if workout.id == model.filteredWorkouts.last?.id, model.canLoadMore {
-                    ProgressView()
+                    Button("Load More Workouts") {
+                        Task { await model.loadMore(using: environment.healthClient) }
+                    }
                         .frame(maxWidth: .infinity)
-                        .task { await model.loadMore(using: environment.healthClient) }
+                        .accessibilityIdentifier("load-more-workouts-button")
                 }
             }
             .listStyle(.plain)
             .accessibilityIdentifier("workout-list")
+            .safeAreaInset(edge: .bottom) {
+                if let message = model.paginationError {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(8)
+                        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+                }
+            }
             .navigationDestination(for: WorkoutSummary.self) { workout in
                 WorkoutDetailView(workout: workout)
             }

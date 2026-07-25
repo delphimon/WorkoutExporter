@@ -19,8 +19,7 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
             let result = metricPoints(
                 points: points,
                 segments: segments,
-                startingDistance: cumulativeDistance,
-                smoothingWindow: settings.routeSmoothingWindow
+                startingDistance: cumulativeDistance
             )
             routeMetrics.append(contentsOf: result.points)
             cumulativeDistance = result.cumulativeDistance
@@ -32,15 +31,15 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
         let thresholdMoving = speedThresholdMovingTime(segments: validSegments, settings: settings)
         let eventMoving = eventAwareMovingTime(detail: detail)
         let averageSpeed = thresholdMoving > 0 ? distance / thresholdMoving : nil
-        let maximumSpeed = validSegments.map(\.speed).max()
+        let recordedMaximumSpeed = groups
+            .flatMap { $0.compactMap(\.speedMetersPerSecond) }
+            .filter { $0.isFinite && $0 >= 0 }
+            .max()
         let nativeAverageSpeed = nativeStatistic(in: detail, matching: "Speed", aggregation: "average")
         let nativeMaximumSpeed = nativeStatistic(in: detail, matching: "Speed", aggregation: "maximum")
         let altitudes = groups.flatMap { $0.map(\.altitudeMeters) }.filter(\.isFinite)
         let heartRates = detail.heartRateSamples.map(\.value).filter { $0.isFinite && $0 > 0 }
-        let elevation = elevationMetrics(
-            segments: validSegments,
-            noiseThreshold: settings.elevationNoiseThresholdMeters
-        )
+        let elevation = elevationMetrics(segments: validSegments)
 
         if groups.isEmpty {
             warnings.append("No route was available; route-derived metrics are omitted.")
@@ -56,15 +55,12 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
             averageSpeedMetersPerSecond: nativeAverageSpeed.map { metric($0, unit: "m/s", .healthKitStatistic) }
                 ?? averageSpeed.map { metric($0, unit: "m/s", .routeDerived) },
             maximumSpeedMetersPerSecond: nativeMaximumSpeed.map { metric($0, unit: "m/s", .healthKitStatistic) }
-                ?? maximumSpeed.map { metric($0, unit: "m/s", .routeDerived) },
+                ?? recordedMaximumSpeed.map { metric($0, unit: "m/s", .location) },
             rawElevationGainMeters: detail.summary.elevationGainMeters.map {
                 metric($0, unit: "m", .healthKitStatistic)
             },
-            smoothedElevationGainMeters: groups.isEmpty ? nil : metric(
-                elevation.filteredGain, unit: "m", .smoothedRouteDerived
-            ),
             elevationLossMeters: groups.isEmpty ? nil : metric(
-                elevation.filteredLoss, unit: "m", .smoothedRouteDerived
+                elevation.loss, unit: "m", .routeDerived
             ),
             minimumAltitudeMeters: altitudes.min().map { metric($0, unit: "m", .location) },
             maximumAltitudeMeters: altitudes.max().map { metric($0, unit: "m", .location) },
@@ -157,8 +153,7 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
     private func metricPoints(
         points: [RoutePoint],
         segments: [RouteSegment],
-        startingDistance: Double,
-        smoothingWindow: Int
+        startingDistance: Double
     ) -> (points: [RouteMetricPoint], cumulativeDistance: Double) {
         guard let first = points.first else { return ([], startingDistance) }
         var cumulative = startingDistance
@@ -171,9 +166,7 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
                 segmentDistanceMeters: 0,
                 cumulativeDistanceMeters: cumulative,
                 derivedSpeedMetersPerSecond: nil,
-                smoothedSpeedMetersPerSecond: nil,
                 rawPaceSecondsPerKilometer: nil,
-                smoothedPaceSecondsPerKilometer: nil,
                 grade: nil,
                 verticalSpeedMetersPerSecond: nil,
                 provenance: .routeDerived
@@ -194,11 +187,9 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
                     segmentDistanceMeters: distance,
                     cumulativeDistanceMeters: cumulative,
                     derivedSpeedMetersPerSecond: speed,
-                    smoothedSpeedMetersPerSecond: nil,
                     rawPaceSecondsPerKilometer: speed.flatMap {
                         $0 > 0 ? 1_000 / $0 : nil
                     },
-                    smoothedPaceSecondsPerKilometer: nil,
                     grade: segment.isValid && segment.distance > 0 ? altitudeDelta / segment.distance : nil,
                     verticalSpeedMetersPerSecond: segment.isValid && segment.duration > 0
                         ? altitudeDelta / segment.duration
@@ -208,15 +199,6 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
             )
         }
 
-        let radius = max(0, smoothingWindow / 2)
-        for index in output.indices {
-            let lower = max(output.startIndex, index - radius)
-            let upper = min(output.index(before: output.endIndex), index + radius)
-            let speeds = output[lower...upper].compactMap(\.derivedSpeedMetersPerSecond)
-            guard let smoothed = average(speeds) else { continue }
-            output[index].smoothedSpeedMetersPerSecond = smoothed
-            output[index].smoothedPaceSecondsPerKilometer = smoothed > 0 ? 1_000 / smoothed : nil
-        }
         return (output, cumulative)
     }
 
@@ -268,37 +250,18 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
         }
     }
 
-    private func elevationMetrics(
-        segments: [RouteSegment],
-        noiseThreshold: Double
-    ) -> (rawGain: Double, rawLoss: Double, filteredGain: Double, filteredLoss: Double) {
-        var rawGain = 0.0
-        var rawLoss = 0.0
-        var filteredGain = 0.0
-        var filteredLoss = 0.0
-        var filterAnchor = segments.first?.start.altitudeMeters
+    private func elevationMetrics(segments: [RouteSegment]) -> (gain: Double, loss: Double) {
+        var gain = 0.0
+        var loss = 0.0
         for segment in segments {
             let delta = segment.end.altitudeMeters - segment.start.altitudeMeters
             if delta > 0 {
-                rawGain += delta
+                gain += delta
             } else {
-                rawLoss += -delta
-            }
-
-            guard let anchor = filterAnchor else {
-                filterAnchor = segment.end.altitudeMeters
-                continue
-            }
-            let filteredDelta = segment.end.altitudeMeters - anchor
-            if filteredDelta >= noiseThreshold {
-                filteredGain += filteredDelta
-                filterAnchor = segment.end.altitudeMeters
-            } else if filteredDelta <= -noiseThreshold {
-                filteredLoss += -filteredDelta
-                filterAnchor = segment.end.altitudeMeters
+                loss += -delta
             }
         }
-        return (rawGain, rawLoss, filteredGain, filteredLoss)
+        return (gain, loss)
     }
 
     private func makeHeartRateZones(
@@ -358,10 +321,7 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
             let moving = speedThresholdMovingTime(segments: splitSegments, settings: settings)
             let samples = heartRates.filter { $0.startDate >= startDate && $0.startDate <= endDate }
             let values = samples.map(\.value)
-            let elevation = elevationMetrics(
-                segments: splitSegments,
-                noiseThreshold: settings.elevationNoiseThresholdMeters
-            )
+            let elevation = elevationMetrics(segments: splitSegments)
             output.append(
                 WorkoutSplit(
                     index: output.count + 1,
@@ -372,8 +332,8 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
                     movingTime: moving,
                     paceSecondsPerKilometer: distance > 0 ? elapsed / (distance / 1_000) : nil,
                     speedMetersPerSecond: moving > 0 ? distance / moving : nil,
-                    elevationGainMeters: elevation.filteredGain,
-                    elevationLossMeters: elevation.filteredLoss,
+                    elevationGainMeters: elevation.gain,
+                    elevationLossMeters: elevation.loss,
                     averageHeartRateBPM: average(values),
                     maximumHeartRateBPM: values.max(),
                     startLatitude: start.latitude,
