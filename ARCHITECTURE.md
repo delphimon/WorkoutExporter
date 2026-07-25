@@ -19,8 +19,10 @@ The UI does not execute HealthKit queries. `HealthKitClient`, `WorkoutRepository
 - HealthKit access is isolated in `LiveHealthKitClient`, an actor.
 - Query descriptors use Swift concurrency.
 - UI models are `@MainActor`.
-- Export APIs are async, cancellation-aware, and yield while processing batches.
-- Multiple-workout package generation is intentionally bounded to one workout at a time in v1 to avoid simultaneous large in-memory route series.
+- Package generation is isolated in `ExportPackageBuilder`, an actor that keeps file generation, hashing, and archiving off the main actor.
+- Export APIs report format-level progress and check cancellation while processing route points, samples, hashes, and archive chunks.
+- Multiple-workout package generation is intentionally bounded to one workout at a time to avoid simultaneous large route series.
+- CSV, GPX, TCX, SHA-256, and ZIP payloads are streamed in bounded chunks. Heart-rate samples are sorted once and matched to route points with binary search.
 
 ## Data principles
 
@@ -38,7 +40,7 @@ These algorithms are Workout Exporter algorithms, not reconstructions of Apple F
 
 ## Persistence and security
 
-Only user preferences persist. Complete exports are staged in the temporary directory, use complete file protection when written as ZIP, and are removed after 24 hours unless the user explicitly saves or shares them.
+Only user preferences persist. Complete exports are staged in the temporary directory, written to a partial archive before atomic publication, use complete file protection when written as ZIP, and are removed after 24 hours unless the user explicitly saves or shares them.
 
 ## Future macOS companion
 

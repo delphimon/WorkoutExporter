@@ -22,6 +22,38 @@ struct ExportOptions: Codable, Hashable, Sendable {
     var packageAsZIP = true
 }
 
+struct ExportProgress: Equatable, Sendable {
+    enum Phase: String, Equatable, Sendable {
+        case preparing
+        case json
+        case csv
+        case gpx
+        case tcx
+        case manifest
+        case archiving
+        case finalizing
+    }
+
+    var phase: Phase
+    var completedWorkouts: Int
+    var totalWorkouts: Int
+
+    var message: String {
+        let action = switch phase {
+        case .preparing: "Preparing workout data"
+        case .json: "Writing JSON"
+        case .csv: "Writing CSV files"
+        case .gpx: "Writing GPX route"
+        case .tcx: "Writing TCX workout"
+        case .manifest: "Calculating file checksums"
+        case .archiving: "Creating ZIP archive"
+        case .finalizing: "Finalizing export"
+        }
+        guard totalWorkouts > 1 else { return action }
+        return "\(action) · workout \(min(completedWorkouts + 1, totalWorkouts)) of \(totalWorkouts)"
+    }
+}
+
 struct ExportFileEntry: Codable, Hashable, Sendable {
     var path: String
     var contentType: String

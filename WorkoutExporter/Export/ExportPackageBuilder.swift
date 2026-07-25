@@ -1,11 +1,11 @@
 import Foundation
 
-struct ExportPackageBuilder: ExportPackageBuilding {
-    private let exporter: WorkoutFileExporter
+actor ExportPackageBuilder: ExportPackageBuilding {
+    private let exporter: any WorkoutExporting
     private let zipWriter: ZIPArchiveWriter
 
     init(
-        exporter: WorkoutFileExporter = WorkoutFileExporter(),
+        exporter: any WorkoutExporting = WorkoutFileExporter(),
         zipWriter: ZIPArchiveWriter = ZIPArchiveWriter()
     ) {
         self.exporter = exporter
@@ -15,53 +15,73 @@ struct ExportPackageBuilder: ExportPackageBuilding {
     func buildPackage(
         for workouts: [WorkoutDetail],
         options: ExportOptions,
-        to directory: URL
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress) async -> Void
     ) async throws -> URL {
-        guard !workouts.isEmpty else { throw WorkoutExporterError.noAccessibleData }
-        let staging = directory.appending(path: "WorkoutExporter-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: staging) }
+        do {
+            guard !workouts.isEmpty else { throw WorkoutExporterError.noAccessibleData }
+            let staging = directory.appending(path: "WorkoutExporter-\(UUID().uuidString)", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: staging) }
 
-        for (index, workout) in workouts.enumerated() {
-            try Task.checkCancellation()
-            let preparedWorkout = filtered(workout, options: options)
-            let folderName = ExportUtilities.safeFilename(for: preparedWorkout.summary)
-            let workoutFolder = staging.appending(path: folderName, directoryHint: .isDirectory)
-            _ = try await exporter.export(preparedWorkout, formats: options.formats, to: workoutFolder)
-            let readme = packageReadme(preparedWorkout)
-            try Data(readme.utf8).write(to: workoutFolder.appending(path: "README.txt"), options: .atomic)
-            let manifest = try manifest(for: workoutFolder, warnings: preparedWorkout.warnings)
-            try encoded(manifest).write(to: workoutFolder.appending(path: "manifest.json"), options: .atomic)
-            if index.isMultiple(of: 4) { await Task.yield() }
-        }
-
-        if workouts.count > 1 {
-            let index = workouts.map {
-                "\(ExportUtilities.safeFilename(for: $0.summary)),\($0.id.uuidString),\(ExportUtilities.date($0.summary.startDate)),\(ExportUtilities.csv($0.summary.activityName))"
+            for (index, workout) in workouts.enumerated() {
+                try Task.checkCancellation()
+                await progress(update(.preparing, index: index, total: workouts.count))
+                let preparedWorkout = filtered(workout, options: options)
+                let folderName = ExportUtilities.safeFilename(for: preparedWorkout.summary)
+                let workoutFolder = staging.appending(path: folderName, directoryHint: .isDirectory)
+                _ = try await exporter.export(
+                    preparedWorkout,
+                    formats: options.formats,
+                    to: workoutFolder
+                ) { phase in
+                    await progress(self.update(phase, index: index, total: workouts.count))
+                }
+                let readme = packageReadme(preparedWorkout)
+                try Data(readme.utf8).write(to: workoutFolder.appending(path: "README.txt"), options: .atomic)
+                await progress(update(.manifest, index: index, total: workouts.count))
+                let manifest = try manifest(for: workoutFolder, warnings: preparedWorkout.warnings)
+                try encoded(manifest).write(to: workoutFolder.appending(path: "manifest.json"), options: .atomic)
+                if index.isMultiple(of: 4) { await Task.yield() }
             }
-            let text = (["folder,workout_id,start_time,activity"] + index).joined(separator: "\r\n") + "\r\n"
-            try Data(text.utf8).write(to: staging.appending(path: "index.csv"), options: .atomic)
-        }
 
-        let packageName = workouts.count == 1
-            ? ExportUtilities.safeFilename(for: workouts[0].summary)
-            : "workout-export-\(ExportUtilities.date(Date()).prefix(10))-\(workouts.count)-workouts"
-        if options.packageAsZIP {
-            let destination = directory.appending(path: "\(packageName).zip")
-            let files = try recursiveFiles(in: staging).map { url -> (String, Data) in
-                let relative = url.path.replacingOccurrences(of: staging.path + "/", with: "")
-                return (relative, try Data(contentsOf: url))
+            if workouts.count > 1 {
+                let index = workouts.map {
+                    "\(ExportUtilities.safeFilename(for: $0.summary)),\($0.id.uuidString),\(ExportUtilities.date($0.summary.startDate)),\(ExportUtilities.csv($0.summary.activityName))"
+                }
+                let text = (["folder,workout_id,start_time,activity"] + index).joined(separator: "\r\n") + "\r\n"
+                try Data(text.utf8).write(to: staging.appending(path: "index.csv"), options: .atomic)
             }
-            try zipWriter.write(files: files, to: destination)
+
+            let packageName = workouts.count == 1
+                ? ExportUtilities.safeFilename(for: workouts[0].summary)
+                : "workout-export-\(ExportUtilities.date(Date()).prefix(10))-\(workouts.count)-workouts"
+            if options.packageAsZIP {
+                await progress(update(.archiving, index: workouts.count - 1, total: workouts.count))
+                let destination = directory.appending(path: "\(packageName).zip")
+                let files = try recursiveFiles(in: staging).map { url -> (String, URL) in
+                    let relative = url.path.replacingOccurrences(of: staging.path + "/", with: "")
+                    return (relative, url)
+                }
+                try zipWriter.write(files: files, to: destination)
+                await progress(update(.finalizing, index: workouts.count - 1, total: workouts.count))
+                return destination
+            }
+
+            await progress(update(.finalizing, index: workouts.count - 1, total: workouts.count))
+            let destination = directory.appending(path: packageName, directoryHint: .isDirectory)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: staging, to: destination)
             return destination
+        } catch is CancellationError {
+            throw WorkoutExporterError.cancelled
+        } catch let error as WorkoutExporterError {
+            throw error
+        } catch {
+            throw WorkoutExporterError.fileWriteFailure(error.localizedDescription)
         }
-
-        let destination = directory.appending(path: packageName, directoryHint: .isDirectory)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        try FileManager.default.copyItem(at: staging, to: destination)
-        return destination
     }
 
     private func filtered(_ workout: WorkoutDetail, options: ExportOptions) -> WorkoutDetail {
@@ -104,12 +124,13 @@ struct ExportPackageBuilder: ExportPackageBuilding {
 
     private func manifest(for directory: URL, warnings: [String]) throws -> ExportManifest {
         let files = try recursiveFiles(in: directory).map { url in
-            let content = try Data(contentsOf: url)
+            try Task.checkCancellation()
+            let hash = try ExportUtilities.sha256(fileAt: url)
             return ExportFileEntry(
                 path: url.lastPathComponent,
                 contentType: contentType(url.pathExtension),
-                byteSize: content.count,
-                sha256: ExportUtilities.sha256(content)
+                byteSize: hash.byteSize,
+                sha256: hash.digest
             )
         }
         return ExportManifest(
@@ -173,5 +194,13 @@ struct ExportPackageBuilder: ExportPackageBuilding {
         Derived values may differ from Apple Fitness due to proprietary smoothing,
         calibration, sensor fusion, and pause handling.
         """
+    }
+
+    private nonisolated func update(
+        _ phase: ExportProgress.Phase,
+        index: Int,
+        total: Int
+    ) -> ExportProgress {
+        ExportProgress(phase: phase, completedWorkouts: index, totalWorkouts: total)
     }
 }

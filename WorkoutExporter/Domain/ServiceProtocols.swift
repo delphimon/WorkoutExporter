@@ -21,9 +21,39 @@ protocol WorkoutMetricCalculating: Sendable {
 }
 
 protocol WorkoutExporting: Sendable {
-    func export(_ detail: WorkoutDetail, formats: Set<ExportFormat>, to directory: URL) async throws -> [URL]
+    func export(
+        _ detail: WorkoutDetail,
+        formats: Set<ExportFormat>,
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress.Phase) async -> Void
+    ) async throws -> [URL]
 }
 
 protocol ExportPackageBuilding: Sendable {
-    func buildPackage(for workouts: [WorkoutDetail], options: ExportOptions, to directory: URL) async throws -> URL
+    func buildPackage(
+        for workouts: [WorkoutDetail],
+        options: ExportOptions,
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress) async -> Void
+    ) async throws -> URL
+}
+
+extension WorkoutExporting {
+    func export(
+        _ detail: WorkoutDetail,
+        formats: Set<ExportFormat>,
+        to directory: URL
+    ) async throws -> [URL] {
+        try await export(detail, formats: formats, to: directory) { _ in }
+    }
+}
+
+extension ExportPackageBuilding {
+    func buildPackage(
+        for workouts: [WorkoutDetail],
+        options: ExportOptions,
+        to directory: URL
+    ) async throws -> URL {
+        try await buildPackage(for: workouts, options: options, to: directory) { _ in }
+    }
 }

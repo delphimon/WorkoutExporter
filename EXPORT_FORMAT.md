@@ -69,4 +69,4 @@ Training Center Database v2 contains one activity and lap, route track points, p
 
 ## ZIP package
 
-Stored-method ZIP archives are standards-compliant and intentionally uncompressed. Each workout directory contains the selected formats, `README.txt`, and `manifest.json`. The manifest lists relative path, MIME type, byte size, and lowercase SHA-256 for every generated payload file. Multi-workout archives also contain `index.csv`.
+Stored-method ZIP archives are standards-compliant and intentionally uncompressed. Payloads and CRC-32 values are streamed in bounded chunks to a partial archive, which is published only after completion. Each workout directory contains the selected formats, `README.txt`, and `manifest.json`. The manifest lists relative path, MIME type, byte size, and lowercase SHA-256 for every generated payload file. Multi-workout archives also contain `index.csv`.

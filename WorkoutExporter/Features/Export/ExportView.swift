@@ -10,6 +10,7 @@ struct ExportView: View {
     @State private var outputURL: URL?
     @State private var errorMessage: String?
     @State private var exportTask: Task<Void, Never>?
+    @State private var exportProgress: ExportProgress?
 
     var body: some View {
         NavigationStack {
@@ -38,7 +39,10 @@ struct ExportView: View {
 
                 if isExporting {
                     Section {
-                        ProgressView("Preparing \(details.count) workout\(details.count == 1 ? "" : "s")…")
+                        ProgressView(
+                            exportProgress?.message
+                                ?? "Preparing \(details.count) workout\(details.count == 1 ? "" : "s")…"
+                        )
                         Button("Cancel", role: .destructive) { exportTask?.cancel() }
                     }
                 }
@@ -72,6 +76,9 @@ struct ExportView: View {
                 options.includeSourceAndDevice = settings.includeSourceMetadata
                 options.packageAsZIP = settings.packageAsZIP
             }
+            .onDisappear {
+                exportTask?.cancel()
+            }
         }
     }
 
@@ -88,8 +95,12 @@ struct ExportView: View {
         isExporting = true
         errorMessage = nil
         outputURL = nil
+        exportProgress = nil
         exportTask = Task {
-            defer { isExporting = false }
+            defer {
+                isExporting = false
+                exportProgress = nil
+            }
             do {
                 let directory = environment.exportDirectory
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -97,7 +108,11 @@ struct ExportView: View {
                     for: details,
                     options: options,
                     to: directory
-                )
+                ) { update in
+                    await MainActor.run {
+                        exportProgress = update
+                    }
+                }
             } catch {
                 errorMessage = error.localizedDescription
             }

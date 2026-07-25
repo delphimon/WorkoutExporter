@@ -36,6 +36,20 @@ enum ExportUtilities {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    static func sha256(fileAt url: URL) throws -> (digest: String, byteSize: Int) {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        var byteSize = 0
+        while let chunk = try handle.read(upToCount: 64 * 1_024), !chunk.isEmpty {
+            try Task.checkCancellation()
+            byteSize += chunk.count
+            hasher.update(data: chunk)
+        }
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return (digest, byteSize)
+    }
+
     static func date(_ value: Date) -> String {
         value.formatted(.iso8601.year().month().day().dateSeparator(.dash)
             .time(includingFractionalSeconds: true).timeSeparator(.colon)
