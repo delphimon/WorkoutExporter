@@ -6,13 +6,29 @@ import Observation
 final class AppEnvironment {
     var healthClient: any HealthKitClient
     let settings: UserSettings
-    let packageBuilder: any ExportPackageBuilding
+    var packageBuilder: any ExportPackageBuilding
     var isUsingSyntheticData = false
 
     init() {
         healthClient = LiveHealthKitClient()
         settings = UserSettings()
         packageBuilder = ExportPackageBuilder()
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-testing")
+            || arguments.contains("--ui-testing-onboarding")
+            || arguments.contains("--ui-testing-export-error") {
+            healthClient = SyntheticHealthKitClient()
+            isUsingSyntheticData = true
+            UserDefaults.standard.set(
+                !arguments.contains("--ui-testing-onboarding"),
+                forKey: "authorizationRequestCompleted"
+            )
+        }
+        if arguments.contains("--ui-testing-export-error") {
+            packageBuilder = UITestFailingPackageBuilder()
+        }
+        #endif
         cleanupExpiredExports()
     }
 
@@ -47,3 +63,16 @@ final class AppEnvironment {
         }
     }
 }
+
+#if DEBUG
+private actor UITestFailingPackageBuilder: ExportPackageBuilding {
+    func buildPackage(
+        for workouts: [WorkoutDetail],
+        options: ExportOptions,
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress) async -> Void
+    ) async throws -> URL {
+        throw WorkoutExporterError.fileWriteFailure("UI test export failure")
+    }
+}
+#endif

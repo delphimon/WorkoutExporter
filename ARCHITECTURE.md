@@ -34,7 +34,9 @@ The UI does not execute HealthKit queries. `HealthKitClient`, `WorkoutRepository
 
 ## Metrics
 
-The deterministic supplemental engine applies configurable maximum accuracy, maximum route-gap duration, maximum plausible speed, and moving-speed threshold. Explicit pause/resume events drive event-aware moving time. A separate threshold-based result is retained. Existing HealthKit workout statistics always take precedence, and elevation gain is read directly from `HKMetadataKeyElevationAscended` when present.
+The deterministic supplemental engine applies configurable maximum accuracy, maximum route-gap duration, maximum plausible speed, moving/stopped run thresholds, speed smoothing window, elevation-noise threshold, split mode, and heart-rate-zone method. Explicit pause/resume events drive event-aware moving time. A separate threshold-based result is retained. Each route point can have raw and smoothed speed/pace, grade, vertical speed, and cumulative distance, with provenance.
+
+Existing HealthKit workout values remain unchanged and are shown as the primary workout values. Elevation gain is read directly from `HKMetadataKeyElevationAscended` when present. Route-filtered elevation and route-derived distance are supplemental values with separate labels and provenance; they never replace or modify the workout activity’s values.
 
 These algorithms are Workout Exporter algorithms, not reconstructions of Apple Fitness.
 

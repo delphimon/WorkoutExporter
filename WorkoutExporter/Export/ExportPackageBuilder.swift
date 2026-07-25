@@ -23,39 +23,87 @@ actor ExportPackageBuilder: ExportPackageBuilding {
             let staging = directory.appending(path: "WorkoutExporter-\(UUID().uuidString)", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: staging) }
+            var completedWorkouts: [WorkoutDetail] = []
+            var failures: [String] = []
 
             for (index, workout) in workouts.enumerated() {
                 try Task.checkCancellation()
                 await progress(update(.preparing, index: index, total: workouts.count))
                 let preparedWorkout = filtered(workout, options: options)
-                let folderName = ExportUtilities.safeFilename(for: preparedWorkout.summary)
+                let folderName = ExportUtilities.safeFilename(
+                    for: preparedWorkout.summary,
+                    format: options.filenameFormat
+                )
                 let workoutFolder = staging.appending(path: folderName, directoryHint: .isDirectory)
-                _ = try await exporter.export(
-                    preparedWorkout,
-                    formats: options.formats,
-                    to: workoutFolder
-                ) { phase in
-                    await progress(self.update(phase, index: index, total: workouts.count))
+                do {
+                    _ = try await exporter.export(
+                        preparedWorkout,
+                        formats: options.formats,
+                        to: workoutFolder
+                    ) { phase in
+                        await progress(self.update(phase, index: index, total: workouts.count))
+                    }
+                    let readme = packageReadme(preparedWorkout, options: options)
+                    try Data(readme.utf8).write(
+                        to: workoutFolder.appending(path: "README.txt"),
+                        options: .atomic
+                    )
+                    await progress(update(.manifest, index: index, total: workouts.count))
+                    let manifest = try manifest(
+                        for: workoutFolder,
+                        warnings: preparedWorkout.warnings,
+                        formats: options.formats
+                    )
+                    try encoded(manifest).write(
+                        to: workoutFolder.appending(path: "manifest.json"),
+                        options: .atomic
+                    )
+                    completedWorkouts.append(preparedWorkout)
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch let error as WorkoutExporterError where error == .cancelled {
+                    throw error
+                } catch {
+                    try? FileManager.default.removeItem(at: workoutFolder)
+                    failures.append(
+                        "\(preparedWorkout.summary.activityName) "
+                            + "(\(preparedWorkout.id.uuidString)): \(error.localizedDescription)"
+                    )
+                    await progress(update(.partialFailure, index: index, total: workouts.count))
+                    if workouts.count == 1 { throw error }
                 }
-                let readme = packageReadme(preparedWorkout)
-                try Data(readme.utf8).write(to: workoutFolder.appending(path: "README.txt"), options: .atomic)
-                await progress(update(.manifest, index: index, total: workouts.count))
-                let manifest = try manifest(for: workoutFolder, warnings: preparedWorkout.warnings)
-                try encoded(manifest).write(to: workoutFolder.appending(path: "manifest.json"), options: .atomic)
                 if index.isMultiple(of: 4) { await Task.yield() }
             }
+            guard !completedWorkouts.isEmpty else {
+                throw WorkoutExporterError.fileWriteFailure(
+                    failures.joined(separator: "\n")
+                )
+            }
+            if !failures.isEmpty {
+                let report = (
+                    ["Some selected workouts could not be exported. Completed workouts remain usable.", ""]
+                        + failures
+                ).joined(separator: "\n")
+                try Data(report.utf8).write(
+                    to: staging.appending(path: "export-warnings.txt"),
+                    options: .atomic
+                )
+            }
 
-            if workouts.count > 1 {
-                let index = workouts.map {
-                    "\(ExportUtilities.safeFilename(for: $0.summary)),\($0.id.uuidString),\(ExportUtilities.date($0.summary.startDate)),\(ExportUtilities.csv($0.summary.activityName))"
+            if completedWorkouts.count > 1 || !failures.isEmpty {
+                let index = completedWorkouts.map {
+                    "\(ExportUtilities.safeFilename(for: $0.summary, format: options.filenameFormat)),\($0.id.uuidString),\(ExportUtilities.date($0.summary.startDate)),\(ExportUtilities.csv($0.summary.activityName))"
                 }
                 let text = (["folder,workout_id,start_time,activity"] + index).joined(separator: "\r\n") + "\r\n"
                 try Data(text.utf8).write(to: staging.appending(path: "index.csv"), options: .atomic)
             }
 
-            let packageName = workouts.count == 1
-                ? ExportUtilities.safeFilename(for: workouts[0].summary)
-                : "workout-export-\(ExportUtilities.date(Date()).prefix(10))-\(workouts.count)-workouts"
+            let packageName = completedWorkouts.count == 1 && workouts.count == 1
+                ? ExportUtilities.safeFilename(
+                    for: completedWorkouts[0].summary,
+                    format: options.filenameFormat
+                )
+                : "workout-export-\(ExportUtilities.date(Date()).prefix(10))-\(completedWorkouts.count)-workouts"
             if options.packageAsZIP {
                 await progress(update(.archiving, index: workouts.count - 1, total: workouts.count))
                 let destination = directory.appending(path: "\(packageName).zip")
@@ -122,7 +170,11 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         return result
     }
 
-    private func manifest(for directory: URL, warnings: [String]) throws -> ExportManifest {
+    private func manifest(
+        for directory: URL,
+        warnings: [String],
+        formats: Set<ExportFormat>
+    ) throws -> ExportManifest {
         let files = try recursiveFiles(in: directory).map { url in
             try Task.checkCancellation()
             let hash = try ExportUtilities.sha256(fileAt: url)
@@ -137,7 +189,8 @@ actor ExportPackageBuilder: ExportPackageBuilding {
             createdAt: Date(),
             exporterVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "development",
             files: files.sorted { $0.path < $1.path },
-            warnings: warnings
+            warnings: warnings,
+            formats: formats.sorted { $0.rawValue < $1.rawValue }
         )
     }
 
@@ -172,7 +225,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         }
     }
 
-    private func packageReadme(_ detail: WorkoutDetail) -> String {
+    private func packageReadme(_ detail: WorkoutDetail, options: ExportOptions) -> String {
         """
         Workout Exporter package
         Schema: com.delphimon.workout-export 1.0.0
@@ -183,11 +236,20 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         HealthKit workout statistics and raw samples are preserved without smoothing or replacement.
         Any supplemental derived values remain separate and carry provenance.
         Provenance is recorded in JSON and relevant CSV columns.
+        Selected presentation units: \(options.units.label)
+        Included formats: \(options.formats.map(\.displayName).sorted().joined(separator: ", "))
 
         Metric settings:
         Moving threshold: \(detail.metricSettings.movingSpeedThresholdMetersPerSecond) m/s
+        Minimum moving duration: \(detail.metricSettings.minimumMovingDuration) s
+        Minimum stopped duration: \(detail.metricSettings.minimumStoppedDuration) s
         Route gap: \(detail.metricSettings.maximumRouteGap) s
         Maximum horizontal accuracy: \(detail.metricSettings.maximumHorizontalAccuracyMeters) m
+        Speed smoothing window: \(detail.metricSettings.routeSmoothingWindow) points
+        Elevation noise threshold: \(detail.metricSettings.elevationNoiseThresholdMeters) m
+        Split mode: \(detail.metricSettings.splitMode.rawValue)
+        Split distance: \(detail.metricSettings.splitDistanceMeters) m
+        Split elapsed interval: \(detail.metricSettings.splitElapsedTime) s
         Limitations:
         HealthKit can return no accessible data when read permission is denied.
         Missing route or heart-rate data is exported as missing, never fabricated.

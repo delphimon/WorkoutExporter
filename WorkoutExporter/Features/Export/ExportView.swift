@@ -67,11 +67,13 @@ struct ExportView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { createExport() }
                         .disabled(isExporting || options.formats.isEmpty)
+                        .accessibilityIdentifier("create-export-button")
                 }
             }
             .onAppear {
                 options.formats = settings.defaultFormats
                 options.units = settings.distanceUnits
+                options.filenameFormat = settings.filenameFormat
                 options.includeRawSamples = settings.includeRawSamples
                 options.includeSourceAndDevice = settings.includeSourceMetadata
                 options.packageAsZIP = settings.packageAsZIP

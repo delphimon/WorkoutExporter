@@ -66,9 +66,9 @@ actor LiveHealthKitClient: HealthKitClient {
                 throw WorkoutExporterError.noAccessibleData
             }
 
-            let quantitySamples = try await fetchQuantitySamples(for: workout)
-            let categories = try await fetchCategorySamples(for: workout)
-            let (routes, routeWarnings) = await fetchRoutes(for: workout)
+            let (quantitySamples, quantityWarnings) = try await fetchQuantitySamples(for: workout)
+            let (categories, categoryWarnings) = try await fetchCategorySamples(for: workout)
+            let (routes, routeWarnings) = try await fetchRoutes(for: workout)
             let workoutSummary = try await summary(for: workout, knownRoutes: !routes.isEmpty)
             let events = (workout.workoutEvents ?? []).map {
                 WorkoutEvent(
@@ -109,7 +109,7 @@ actor LiveHealthKitClient: HealthKitClient {
                 metadata: HealthKitMappings.safeMetadata(workout.metadata),
                 derived: .empty,
                 metricSettings: settings,
-                warnings: routeWarnings
+                warnings: quantityWarnings + categoryWarnings + routeWarnings
             )
             detail.derived = try await metricCalculator.calculate(detail: detail)
             detail.warnings.append(contentsOf: detail.derived.warnings)
@@ -162,56 +162,79 @@ actor LiveHealthKitClient: HealthKitClient {
             .doubleValue(for: .meter())
     }
 
-    private func fetchQuantitySamples(for workout: HKWorkout) async throws -> [WorkoutSample] {
+    private func fetchQuantitySamples(
+        for workout: HKWorkout
+    ) async throws -> ([WorkoutSample], [String]) {
         var output: [WorkoutSample] = []
+        var warnings: [String] = []
         for entry in HealthKitMappings.quantityTypes {
             try Task.checkCancellation()
-            let predicate = HKQuery.predicateForObjects(from: workout)
-            let descriptor = HKSampleQueryDescriptor<HKQuantitySample>(
-                predicates: [.quantitySample(type: entry.type, predicate: predicate)],
-                sortDescriptors: [SortDescriptor(\.startDate)]
-            )
-            let samples = try await descriptor.result(for: healthStore)
-            output.append(contentsOf: samples.map {
-                WorkoutSample(
-                    id: $0.uuid,
-                    typeIdentifier: entry.type.identifier,
-                    startDate: $0.startDate,
-                    endDate: $0.endDate,
-                    value: $0.quantity.doubleValue(for: entry.unit),
-                    unit: entry.unit.unitString,
-                    source: HealthKitMappings.source($0.sourceRevision),
-                    device: HealthKitMappings.device($0.device),
-                    provenance: .healthKitSample,
-                    metadata: HealthKitMappings.safeMetadata($0.metadata)
+            do {
+                let predicate = HKQuery.predicateForObjects(from: workout)
+                let descriptor = HKSampleQueryDescriptor<HKQuantitySample>(
+                    predicates: [.quantitySample(type: entry.type, predicate: predicate)],
+                    sortDescriptors: [SortDescriptor(\.startDate)]
                 )
-            })
+                let samples = try await descriptor.result(for: healthStore)
+                output.append(contentsOf: samples.map {
+                    WorkoutSample(
+                        id: $0.uuid,
+                        typeIdentifier: entry.type.identifier,
+                        startDate: $0.startDate,
+                        endDate: $0.endDate,
+                        value: $0.quantity.doubleValue(for: entry.unit),
+                        unit: entry.unit.unitString,
+                        source: HealthKitMappings.source($0.sourceRevision),
+                        device: HealthKitMappings.device($0.device),
+                        provenance: .healthKitSample,
+                        metadata: HealthKitMappings.safeMetadata($0.metadata)
+                    )
+                })
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                warnings.append(
+                    "\(entry.type.identifier) samples could not be read: \(error.localizedDescription)"
+                )
+            }
         }
-        return output.sorted { $0.startDate < $1.startDate }
+        return (output.sorted { $0.startDate < $1.startDate }, warnings)
     }
 
-    private func fetchCategorySamples(for workout: HKWorkout) async throws -> [CategorySample] {
+    private func fetchCategorySamples(
+        for workout: HKWorkout
+    ) async throws -> ([CategorySample], [String]) {
         var output: [CategorySample] = []
+        var warnings: [String] = []
         for type in HealthKitMappings.categoryTypes {
-            let predicate = HKQuery.predicateForObjects(from: workout)
-            let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
-                predicates: [.categorySample(type: type, predicate: predicate)],
-                sortDescriptors: [SortDescriptor(\.startDate)]
-            )
-            let samples = try await descriptor.result(for: healthStore)
-            output.append(contentsOf: samples.map {
-                CategorySample(
-                    id: $0.uuid,
-                    typeIdentifier: type.identifier,
-                    startDate: $0.startDate,
-                    endDate: $0.endDate,
-                    value: $0.value,
-                    source: HealthKitMappings.source($0.sourceRevision),
-                    metadata: HealthKitMappings.safeMetadata($0.metadata)
+            try Task.checkCancellation()
+            do {
+                let predicate = HKQuery.predicateForObjects(from: workout)
+                let descriptor = HKSampleQueryDescriptor<HKCategorySample>(
+                    predicates: [.categorySample(type: type, predicate: predicate)],
+                    sortDescriptors: [SortDescriptor(\.startDate)]
                 )
-            })
+                let samples = try await descriptor.result(for: healthStore)
+                output.append(contentsOf: samples.map {
+                    CategorySample(
+                        id: $0.uuid,
+                        typeIdentifier: type.identifier,
+                        startDate: $0.startDate,
+                        endDate: $0.endDate,
+                        value: $0.value,
+                        source: HealthKitMappings.source($0.sourceRevision),
+                        metadata: HealthKitMappings.safeMetadata($0.metadata)
+                    )
+                })
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                warnings.append(
+                    "\(type.identifier) samples could not be read: \(error.localizedDescription)"
+                )
+            }
         }
-        return output
+        return (output, warnings)
     }
 
     private func routeSamples(for workout: HKWorkout, limit: Int? = nil) async throws -> [HKWorkoutRoute] {
@@ -224,7 +247,9 @@ actor LiveHealthKitClient: HealthKitClient {
         return try await descriptor.result(for: healthStore)
     }
 
-    private func fetchRoutes(for workout: HKWorkout) async -> ([UUID: [RoutePoint]], [String]) {
+    private func fetchRoutes(
+        for workout: HKWorkout
+    ) async throws -> ([UUID: [RoutePoint]], [String]) {
         do {
             let samples = try await routeSamples(for: workout)
             var output: [UUID: [RoutePoint]] = [:]
@@ -262,11 +287,15 @@ actor LiveHealthKitClient: HealthKitClient {
                     output[route.uuid] = points.sorted {
                         $0.timestamp == $1.timestamp ? $0.sequence < $1.sequence : $0.timestamp < $1.timestamp
                     }
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
                     warnings.append("Route \(route.uuid.uuidString) could not be fully read: \(error.localizedDescription)")
                 }
             }
             return (output, warnings)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return ([:], ["Workout routes could not be queried: \(error.localizedDescription)"])
         }

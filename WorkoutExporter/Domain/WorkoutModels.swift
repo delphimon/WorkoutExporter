@@ -124,6 +124,24 @@ enum MovingTimeMethod: String, Codable, CaseIterable, Sendable {
     case speedThreshold
 }
 
+enum SplitMode: String, Codable, CaseIterable, Sendable {
+    case distance
+    case elapsedTime
+}
+
+enum HeartRateZoneMethod: String, Codable, CaseIterable, Sendable {
+    case manual
+    case percentMaximum
+    case heartRateReserve
+}
+
+struct HeartRateZoneSettings: Codable, Hashable, Sendable {
+    var method: HeartRateZoneMethod = .percentMaximum
+    var maximumHeartRateBPM = 190.0
+    var restingHeartRateBPM = 60.0
+    var manualUpperBoundsBPM = [120.0, 140.0, 155.0, 170.0]
+}
+
 struct MetricCalculationSettings: Codable, Hashable, Sendable {
     var movingSpeedThresholdMetersPerSecond = 0.75
     var minimumMovingDuration: TimeInterval = 3
@@ -132,8 +150,69 @@ struct MetricCalculationSettings: Codable, Hashable, Sendable {
     var maximumRouteGap: TimeInterval = 30
     var maximumPlausibleSpeedMetersPerSecond = 30.0
     var splitDistanceMeters = 1_000.0
+    var splitMode: SplitMode = .distance
+    var splitElapsedTime: TimeInterval = 600
+    var routeSmoothingWindow = 5
+    var elevationNoiseThresholdMeters = 3.0
+    var heartRateZones = HeartRateZoneSettings()
 
     static let conservativeDefault = MetricCalculationSettings()
+
+    private enum CodingKeys: String, CodingKey {
+        case movingSpeedThresholdMetersPerSecond
+        case minimumMovingDuration
+        case minimumStoppedDuration
+        case maximumHorizontalAccuracyMeters
+        case maximumRouteGap
+        case maximumPlausibleSpeedMetersPerSecond
+        case splitDistanceMeters
+        case splitMode
+        case splitElapsedTime
+        case routeSmoothingWindow
+        case elevationNoiseThresholdMeters
+        case heartRateZones
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let defaults = Self.conservativeDefault
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        movingSpeedThresholdMetersPerSecond = try container.decodeIfPresent(
+            Double.self, forKey: .movingSpeedThresholdMetersPerSecond
+        ) ?? defaults.movingSpeedThresholdMetersPerSecond
+        minimumMovingDuration = try container.decodeIfPresent(
+            TimeInterval.self, forKey: .minimumMovingDuration
+        ) ?? defaults.minimumMovingDuration
+        minimumStoppedDuration = try container.decodeIfPresent(
+            TimeInterval.self, forKey: .minimumStoppedDuration
+        ) ?? defaults.minimumStoppedDuration
+        maximumHorizontalAccuracyMeters = try container.decodeIfPresent(
+            Double.self, forKey: .maximumHorizontalAccuracyMeters
+        ) ?? defaults.maximumHorizontalAccuracyMeters
+        maximumRouteGap = try container.decodeIfPresent(
+            TimeInterval.self, forKey: .maximumRouteGap
+        ) ?? defaults.maximumRouteGap
+        maximumPlausibleSpeedMetersPerSecond = try container.decodeIfPresent(
+            Double.self, forKey: .maximumPlausibleSpeedMetersPerSecond
+        ) ?? defaults.maximumPlausibleSpeedMetersPerSecond
+        splitDistanceMeters = try container.decodeIfPresent(
+            Double.self, forKey: .splitDistanceMeters
+        ) ?? defaults.splitDistanceMeters
+        splitMode = try container.decodeIfPresent(SplitMode.self, forKey: .splitMode) ?? defaults.splitMode
+        splitElapsedTime = try container.decodeIfPresent(
+            TimeInterval.self, forKey: .splitElapsedTime
+        ) ?? defaults.splitElapsedTime
+        routeSmoothingWindow = try container.decodeIfPresent(
+            Int.self, forKey: .routeSmoothingWindow
+        ) ?? defaults.routeSmoothingWindow
+        elevationNoiseThresholdMeters = try container.decodeIfPresent(
+            Double.self, forKey: .elevationNoiseThresholdMeters
+        ) ?? defaults.elevationNoiseThresholdMeters
+        heartRateZones = try container.decodeIfPresent(
+            HeartRateZoneSettings.self, forKey: .heartRateZones
+        ) ?? defaults.heartRateZones
+    }
 }
 
 struct MetricValue: Codable, Hashable, Sendable {
@@ -162,6 +241,31 @@ struct WorkoutSplit: Identifiable, Codable, Hashable, Sendable {
     var endLongitude: Double?
 }
 
+struct RouteMetricPoint: Identifiable, Codable, Hashable, Sendable {
+    var id: UUID { routePointID }
+    var routePointID: UUID
+    var routeID: UUID
+    var sequence: Int
+    var timestamp: Date
+    var segmentDistanceMeters: Double
+    var cumulativeDistanceMeters: Double
+    var derivedSpeedMetersPerSecond: Double?
+    var smoothedSpeedMetersPerSecond: Double?
+    var rawPaceSecondsPerKilometer: Double?
+    var smoothedPaceSecondsPerKilometer: Double?
+    var grade: Double?
+    var verticalSpeedMetersPerSecond: Double?
+    var provenance: DataProvenance
+}
+
+struct HeartRateZoneResult: Identifiable, Codable, Hashable, Sendable {
+    var id: Int { zone }
+    var zone: Int
+    var lowerBoundBPM: Double
+    var upperBoundBPM: Double?
+    var duration: TimeInterval
+}
+
 struct DerivedMetrics: Codable, Hashable, Sendable {
     var routeDistanceMeters: MetricValue? = nil
     var eventAwareMovingTime: MetricValue? = nil
@@ -176,6 +280,8 @@ struct DerivedMetrics: Codable, Hashable, Sendable {
     var averageHeartRateBPM: MetricValue? = nil
     var minimumHeartRateBPM: MetricValue? = nil
     var maximumHeartRateBPM: MetricValue? = nil
+    var routeMetrics: [RouteMetricPoint]? = nil
+    var heartRateZones: [HeartRateZoneResult]? = nil
     var splits: [WorkoutSplit] = []
     var warnings: [String] = []
 

@@ -2,11 +2,18 @@ import CryptoKit
 import Foundation
 
 enum ExportUtilities {
-    static func safeFilename(for workout: WorkoutSummary) -> String {
+    static func safeFilename(
+        for workout: WorkoutSummary,
+        format: ExportFilenameFormat = .dateActivityIdentifier
+    ) -> String {
         let timestamp = String(date(workout.startDate).prefix(19))
             .replacingOccurrences(of: ":", with: "-")
         let activity = sanitize(workout.activityName.lowercased())
-        return "\(timestamp)_\(activity)_\(workout.id.uuidString.lowercased())"
+        let identifier = workout.id.uuidString.lowercased()
+        return switch format {
+        case .dateActivityIdentifier: "\(timestamp)_\(activity)_\(identifier)"
+        case .activityDateIdentifier: "\(activity)_\(timestamp)_\(identifier)"
+        }
     }
 
     static func sanitize(_ value: String) -> String {

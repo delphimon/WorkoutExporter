@@ -27,7 +27,7 @@ Top-level fields:
 | `categorySamples` | Associated category sample identifiers, intervals, integer values, source, and metadata |
 | `routes` | Dictionary keyed by source route UUID |
 | `metadata` | Safe string representation of workout metadata |
-| `derived` | Derived metric values, provenance, splits, and warnings |
+| `derived` | Supplemental metric values, per-route series, heart-rate zones, splits, provenance, and warnings |
 | `metricSettings` | Exact thresholds used for supplemental derived metrics |
 | `warnings` | Partial-data and quality notes |
 
@@ -45,7 +45,7 @@ All CSV is UTF-8 with RFC 4180 quoting and CRLF line endings.
 
 `workout_id`, `route_id`, `sequence`, `timestamp`, `latitude`, `longitude`, `altitude_m`, `horizontal_accuracy_m`, `vertical_accuracy_m`, `speed_mps`, `speed_accuracy_mps`, `course_deg`, `course_accuracy_deg`, `segment_distance_m`, `cumulative_distance_m`, `derived_speed_mps`, `smoothed_speed_mps`, `grade`, `quality_flags`.
 
-Blank derived columns mean no reliable value was available; raw route data is never fabricated.
+Blank derived columns mean no reliable value was available. Derived series use the exact settings in `metricSettings`; every original route point, altitude, timestamp, and native speed remains unchanged.
 
 ### `events.csv`
 
@@ -61,12 +61,12 @@ Blank derived columns mean no reliable value was available; raw route data is ne
 
 ## GPX
 
-GPX 1.1 uses one `trkseg` per HealthKit route object. Each track point includes coordinates, time, elevation, and Garmin TrackPoint heart-rate extension when a sample is within ten seconds. Unsupported fields are not placed in standard elements.
+GPX 1.1 uses one `trkseg` per HealthKit route object and starts another segment after a meaningful source gap. Each original point includes coordinates, time, elevation, and available Garmin TrackPoint extensions for heart rate, cadence, temperature, and native point speed. Unsupported or missing fields are omitted rather than invented.
 
 ## TCX
 
-Training Center Database v2 contains one activity and lap, route track points, position, altitude, heart rate, duration, distance, and calories when available. Running and cycling map to standard TCX sports; other activities map conservatively to `Other`.
+Training Center Database v2 contains one activity and lap, route track points, position, altitude, cumulative distance, heart rate, cadence, speed, duration, distance, calories, and maximum speed when available. Running and cycling map to standard TCX sports; other activities map conservatively to `Other`.
 
 ## ZIP package
 
-Stored-method ZIP archives are standards-compliant and intentionally uncompressed. Payloads and CRC-32 values are streamed in bounded chunks to a partial archive, which is published only after completion. Each workout directory contains the selected formats, `README.txt`, and `manifest.json`. The manifest lists relative path, MIME type, byte size, and lowercase SHA-256 for every generated payload file. Multi-workout archives also contain `index.csv`.
+Stored-method ZIP archives are standards-compliant and intentionally uncompressed. Payloads and CRC-32 values are streamed in bounded chunks to a partial archive, which is published only after completion. Each workout directory contains the selected formats, `README.txt`, and `manifest.json`. The manifest lists selected formats, relative path, MIME type, byte size, and lowercase SHA-256 for every generated payload file. Multi-workout archives contain `index.csv`; if one workout fails, successful folders remain usable and `export-warnings.txt` identifies the failed items.

@@ -19,6 +19,7 @@ struct ExportOptions: Codable, Hashable, Sendable {
     var includeRoute = true
     var includeSourceAndDevice = true
     var movingTimeMethod: MovingTimeMethod = .eventAware
+    var filenameFormat: ExportFilenameFormat = .dateActivityIdentifier
     var packageAsZIP = true
 }
 
@@ -32,6 +33,7 @@ struct ExportProgress: Equatable, Sendable {
         case manifest
         case archiving
         case finalizing
+        case partialFailure
     }
 
     var phase: Phase
@@ -48,6 +50,7 @@ struct ExportProgress: Equatable, Sendable {
         case .manifest: "Calculating file checksums"
         case .archiving: "Creating ZIP archive"
         case .finalizing: "Finalizing export"
+        case .partialFailure: "Continuing after a partial-data failure"
         }
         guard totalWorkouts > 1 else { return action }
         return "\(action) · workout \(min(completedWorkouts + 1, totalWorkouts)) of \(totalWorkouts)"
@@ -68,6 +71,7 @@ struct ExportManifest: Codable, Hashable, Sendable {
     var exporterVersion: String
     var files: [ExportFileEntry]
     var warnings: [String]
+    var formats: [ExportFormat]? = nil
 }
 
 struct WorkoutExportEnvelope: Codable, Hashable, Sendable {

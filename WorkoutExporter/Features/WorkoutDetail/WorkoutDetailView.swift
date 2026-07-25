@@ -9,6 +9,7 @@ struct WorkoutDetailView: View {
     @State private var model = WorkoutDetailViewModel()
     @State private var selectedSection = DetailSection.summary
     @State private var showExport = false
+    @State private var selectedDate: Date?
 
     var body: some View {
         Group {
@@ -25,6 +26,7 @@ struct WorkoutDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             Button("Export", systemImage: "square.and.arrow.up") { showExport = true }
+                .accessibilityIdentifier("workout-export-button")
         }
         .sheet(isPresented: $showExport) {
             if case .loaded(let detail) = model.state {
@@ -43,16 +45,24 @@ struct WorkoutDetailView: View {
             }
             .pickerStyle(.menu)
             .padding(.horizontal)
+            .accessibilityIdentifier("detail-section-picker")
 
             ScrollView {
                 switch selectedSection {
                 case .summary: SummarySection(detail: detail, units: settings.distanceUnits)
-                case .map: RouteMapSection(detail: detail)
-                case .heartRate: HeartRateSection(detail: detail)
-                case .pace: PaceSection(detail: detail, units: settings.distanceUnits)
-                case .elevation: ElevationSection(detail: detail, units: settings.distanceUnits)
+                case .map: RouteMapSection(detail: detail, selectedDate: $selectedDate)
+                case .heartRate: HeartRateSection(detail: detail, selectedDate: $selectedDate)
+                case .pace: PaceSection(detail: detail, units: settings.distanceUnits, selectedDate: $selectedDate)
+                case .elevation: ElevationSection(detail: detail, units: settings.distanceUnits, selectedDate: $selectedDate)
                 case .splits: SplitsSection(detail: detail, units: settings.distanceUnits)
                 case .raw: RawDataSection(detail: detail)
+                case .export:
+                    Button("Configure Export", systemImage: "square.and.arrow.up") {
+                        showExport = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding()
                 }
             }
         }
@@ -60,7 +70,7 @@ struct WorkoutDetailView: View {
 }
 
 private enum DetailSection: String, CaseIterable, Identifiable {
-    case summary, map, heartRate, pace, elevation, splits, raw
+    case summary, map, heartRate, pace, elevation, splits, raw, export
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -79,9 +89,11 @@ private struct SummarySection: View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             MetricCard("Duration", MeasurementFormatterFactory.duration(detail.summary.duration), "clock")
             MetricCard("Workout Distance", MeasurementFormatterFactory.distance(detail.summary.totalDistanceMeters, preference: units), "figure.run")
+            MetricCard("GPS-Derived Distance", MeasurementFormatterFactory.distance(detail.derived.routeDistanceMeters?.value, preference: units), "location")
             MetricCard("Moving Time", MeasurementFormatterFactory.duration(detail.derived.eventAwareMovingTime?.value ?? 0), "pause.circle")
             MetricCard("Average Heart Rate", detail.derived.averageHeartRateBPM.map { "\(Int($0.value.rounded())) bpm" } ?? "—", "heart")
             MetricCard("Workout Elevation Gain", MeasurementFormatterFactory.elevation(detail.summary.elevationGainMeters, preference: units), "mountain.2")
+            MetricCard("Route-Filtered Gain", MeasurementFormatterFactory.elevation(detail.derived.smoothedElevationGainMeters?.value, preference: units), "chart.line.uptrend.xyaxis")
         }
         .padding()
 
@@ -124,6 +136,7 @@ private struct MetricCard: View {
 
 private struct RouteMapSection: View {
     let detail: WorkoutDetail
+    @Binding var selectedDate: Date?
 
     var body: some View {
         if detail.routePoints.isEmpty {
@@ -143,6 +156,14 @@ private struct RouteMapSection: View {
                     Marker("Finish", systemImage: "flag.checkered", coordinate: .init(latitude: last.latitude, longitude: last.longitude))
                         .tint(.red)
                 }
+                if let selected = selectedPoint {
+                    Marker(
+                        "Selected \(selected.timestamp.formatted(date: .omitted, time: .standard))",
+                        systemImage: "scope",
+                        coordinate: .init(latitude: selected.latitude, longitude: selected.longitude)
+                    )
+                    .tint(.orange)
+                }
             }
             .mapStyle(.standard(elevation: .realistic))
             .frame(minHeight: 500)
@@ -150,20 +171,30 @@ private struct RouteMapSection: View {
             .padding()
         }
     }
+
+    private var selectedPoint: RoutePoint? {
+        guard let selectedDate else { return nil }
+        return detail.routePoints.min {
+            abs($0.timestamp.timeIntervalSince(selectedDate))
+                < abs($1.timestamp.timeIntervalSince(selectedDate))
+        }
+    }
 }
 
 private struct HeartRateSection: View {
     let detail: WorkoutDetail
+    @Binding var selectedDate: Date?
 
     var body: some View {
         if detail.heartRateSamples.isEmpty {
             ContentUnavailableView("No Heart-Rate Data", systemImage: "heart.slash", description: Text("The route and other workout data are still available."))
                 .frame(minHeight: 400)
         } else {
-            Chart(detail.heartRateSamples) { sample in
+            Chart(displaySamples) { sample in
                 LineMark(x: .value("Time", sample.startDate), y: .value("BPM", sample.value))
                     .foregroundStyle(.red)
             }
+            .chartXSelection(value: $selectedDate)
             .chartYAxisLabel("beats/min")
             .frame(height: 320)
             .padding()
@@ -173,18 +204,58 @@ private struct HeartRateSection: View {
                 MetricCard("Maximum", "\(Int(detail.derived.maximumHeartRateBPM?.value.rounded() ?? 0)) bpm", "arrow.up")
             }
             .padding(.horizontal)
+
+            if let zones = detail.derived.heartRateZones {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Time in Heart-Rate Zones").font(.headline)
+                    ForEach(zones) { zone in
+                        LabeledContent(
+                            "Zone \(zone.zone)",
+                            value: MeasurementFormatterFactory.duration(zone.duration)
+                        )
+                    }
+                    Text("Personal analysis only; not medical guidance.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+            }
         }
+    }
+
+    private var displaySamples: [WorkoutSample] {
+        downsample(detail.heartRateSamples, limit: 1_200)
     }
 }
 
 private struct PaceSection: View {
     let detail: WorkoutDetail
     let units: DistanceUnitPreference
+    @Binding var selectedDate: Date?
 
     var body: some View {
         VStack(spacing: 12) {
+            if !displayMetrics.isEmpty {
+                Chart(displayMetrics) { point in
+                    LineMark(
+                        x: .value("Time", point.timestamp),
+                        y: .value("Speed", displaySpeed(point.smoothedSpeedMetersPerSecond))
+                    )
+                }
+                .chartXSelection(value: $selectedDate)
+                .chartYAxisLabel(units == .metric ? "km/h" : "mph")
+                .frame(height: 280)
+            }
             MetricCard("Elapsed Pace", elapsedPace, "timer")
             MetricCard("Moving Pace", movingPace, "figure.run")
+            MetricCard(
+                "Maximum Speed",
+                MeasurementFormatterFactory.speed(
+                    detail.derived.maximumSpeedMetersPerSecond?.value,
+                    preference: units
+                ),
+                "speedometer"
+            )
         }
         .padding()
     }
@@ -208,23 +279,36 @@ private struct PaceSection: View {
             preference: units
         )
     }
+
+    private var displayMetrics: [RouteMetricPoint] {
+        downsample(detail.derived.routeMetrics ?? [], limit: 1_200)
+    }
+
+    private func displaySpeed(_ metersPerSecond: Double?) -> Double {
+        guard let metersPerSecond else { return 0 }
+        return Measurement(value: metersPerSecond, unit: UnitSpeed.metersPerSecond)
+            .converted(to: units.speedUnit)
+            .value
+    }
 }
 
 private struct ElevationSection: View {
     let detail: WorkoutDetail
     let units: DistanceUnitPreference
+    @Binding var selectedDate: Date?
 
     var body: some View {
         if detail.routePoints.isEmpty {
             ContentUnavailableView("No Elevation Data", systemImage: "mountain.2")
         } else {
-            Chart(detail.routePoints) { point in
+            Chart(displayPoints) { point in
                 AreaMark(
                     x: .value("Time", point.timestamp),
                     y: .value("Altitude", displayAltitude(point.altitudeMeters))
                 )
                     .foregroundStyle(.green.opacity(0.5))
             }
+            .chartXSelection(value: $selectedDate)
             .chartYAxisLabel(units == .metric ? "meters" : "feet")
             .frame(height: 320)
             .padding()
@@ -234,7 +318,20 @@ private struct ElevationSection: View {
                 "mountain.2"
             )
             .padding()
+            MetricCard(
+                "Route-Filtered Gain",
+                MeasurementFormatterFactory.elevation(
+                    detail.derived.smoothedElevationGainMeters?.value,
+                    preference: units
+                ),
+                "chart.line.uptrend.xyaxis"
+            )
+            .padding(.horizontal)
         }
+    }
+
+    private var displayPoints: [RoutePoint] {
+        downsample(detail.routePoints, limit: 1_200)
     }
 
     private func displayAltitude(_ meters: Double) -> Double {
@@ -242,6 +339,12 @@ private struct ElevationSection: View {
             .converted(to: units.elevationUnit)
             .value
     }
+}
+
+private func downsample<Element>(_ values: [Element], limit: Int) -> [Element] {
+    guard values.count > limit, limit > 1 else { return values }
+    let stride = Double(values.count - 1) / Double(limit - 1)
+    return (0..<limit).map { values[min(values.count - 1, Int((Double($0) * stride).rounded()))] }
 }
 
 private struct SplitsSection: View {

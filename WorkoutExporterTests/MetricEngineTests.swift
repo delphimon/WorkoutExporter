@@ -11,10 +11,68 @@ final class MetricEngineTests: XCTestCase {
         XCTAssertGreaterThan(metrics.averageSpeedMetersPerSecond?.value ?? 0, 0)
         XCTAssertEqual(metrics.rawElevationGainMeters?.value, detail.summary.elevationGainMeters)
         XCTAssertEqual(metrics.rawElevationGainMeters?.provenance, .healthKitStatistic)
-        XCTAssertNil(metrics.smoothedElevationGainMeters)
+        XCTAssertEqual(metrics.smoothedElevationGainMeters?.provenance, .smoothedRouteDerived)
+        XCTAssertGreaterThanOrEqual(metrics.smoothedElevationGainMeters?.value ?? -1, 0)
         XCTAssertEqual(metrics.averageHeartRateBPM?.value, detail.summary.averageHeartRateBPM)
         XCTAssertEqual(metrics.averageHeartRateBPM?.provenance, .healthKitStatistic)
+        XCTAssertEqual(metrics.routeMetrics?.count, detail.routePoints.count)
+        XCTAssertEqual(metrics.routeMetrics?.first?.cumulativeDistanceMeters, 0)
+        XCTAssertTrue(metrics.routeMetrics?.dropFirst().contains { $0.derivedSpeedMetersPerSecond != nil } == true)
+        XCTAssertEqual(
+            metrics.heartRateZones?.map(\.duration).reduce(0, +) ?? -1,
+            detail.summary.duration - 5,
+            accuracy: 1
+        )
         XCTAssertFalse(metrics.splits.isEmpty)
+    }
+
+    func testHikeProducesSeparateFilteredElevationWithoutReplacingNativeGain() async throws {
+        let detail = SyntheticWorkoutFactory.make(.hikeWithStops)
+        let metrics = try await WorkoutMetricCalculator().calculate(detail: detail)
+
+        XCTAssertEqual(metrics.rawElevationGainMeters?.value, 420)
+        XCTAssertEqual(metrics.rawElevationGainMeters?.provenance, .healthKitStatistic)
+        XCTAssertGreaterThan(metrics.smoothedElevationGainMeters?.value ?? 0, 0)
+        XCTAssertEqual(metrics.smoothedElevationGainMeters?.provenance, .smoothedRouteDerived)
+    }
+
+    func testNativeWorkoutValuesRemainUnchangedWhenDerivedValuesDiffer() async throws {
+        let detail = SyntheticWorkoutFactory.make(.conflictingDistance)
+        let originalSummary = detail.summary
+        let metrics = try await WorkoutMetricCalculator().calculate(detail: detail)
+
+        XCTAssertEqual(detail.summary, originalSummary)
+        XCTAssertEqual(metrics.rawElevationGainMeters?.value, originalSummary.elevationGainMeters)
+        XCTAssertEqual(metrics.rawElevationGainMeters?.provenance, .healthKitStatistic)
+        XCTAssertNotEqual(metrics.routeDistanceMeters?.value, originalSummary.totalDistanceMeters)
+        XCTAssertEqual(metrics.routeDistanceMeters?.provenance, .routeDerived)
+    }
+
+    func testElapsedTimeSplitsAndManualHeartRateZones() async throws {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.metricSettings.splitMode = .elapsedTime
+        detail.metricSettings.splitElapsedTime = 900
+        detail.metricSettings.heartRateZones.method = .manual
+        detail.metricSettings.heartRateZones.manualUpperBoundsBPM = [130, 140, 150, 160]
+
+        let metrics = try await WorkoutMetricCalculator().calculate(detail: detail)
+
+        XCTAssertGreaterThanOrEqual(metrics.splits.count, 3)
+        XCTAssertTrue(metrics.splits.dropLast().allSatisfy { $0.elapsedTime >= 900 })
+        XCTAssertEqual(metrics.heartRateZones?.count, 5)
+        XCTAssertEqual(metrics.heartRateZones?[0].upperBoundBPM, 130)
+        XCTAssertEqual(metrics.heartRateZones?[4].lowerBoundBPM, 160)
+    }
+
+    func testMetricSettingsDecodeOlderExportsWithConservativeDefaults() throws {
+        let data = Data(#"{"movingSpeedThresholdMetersPerSecond":1.25}"#.utf8)
+        let settings = try JSONDecoder().decode(MetricCalculationSettings.self, from: data)
+
+        XCTAssertEqual(settings.movingSpeedThresholdMetersPerSecond, 1.25)
+        XCTAssertEqual(settings.minimumStoppedDuration, 5)
+        XCTAssertEqual(settings.splitMode, .distance)
+        XCTAssertEqual(settings.routeSmoothingWindow, 5)
+        XCTAssertEqual(settings.heartRateZones.method, .percentMaximum)
     }
 
     func testImplausibleJumpIsPreservedButExcluded() async throws {

@@ -2,7 +2,9 @@
 
 ## Automated tests
 
-The test target covers route distance, invalid points, GPS jumps, moving time, pause handling, elevation, heart-rate statistics, splits, units, filenames, CSV escaping/line endings, JSON schema, GPX/TCX parsing, indexed heart-rate matching, CRC-32, streaming SHA-256, ZIP signatures, progress phases, off-main export execution, and manifest integrity.
+The unit target covers route distance and point series, invalid points, GPS jumps, moving/stopped thresholds, pause handling, native-versus-derived elevation, heart-rate statistics and zones, distance/time splits, units, list filters/sorts/pagination, filenames, CSV escaping/line endings, JSON compatibility, GPX/TCX structure, indexed heart-rate matching, CRC-32, streaming SHA-256, ZIP signatures, progress/cancellation/partial completion, off-main export execution, and manifest integrity.
+
+The UI target covers onboarding/privacy copy, synthetic-data entry, workout list/filter navigation, detail loading, and export configuration.
 
 All 15 deterministic fixtures are generated in `SyntheticWorkoutFactory`:
 
@@ -28,11 +30,11 @@ Run:
 /Applications/Xcode-beta.app/Contents/Developer/usr/bin/xcodebuild \
   test -project WorkoutExporter.xcodeproj \
   -scheme WorkoutExporter \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' \
   -parallel-testing-enabled NO
 ```
 
-Use the Xcode beta binary explicitly on macOS beta systems. Disabling parallel testing also avoids unnecessary cloned simulators for this single unit-test bundle.
+Use the Xcode beta binary explicitly on macOS 27 beta systems. The checked toolchain is Xcode 27.0 beta build 27A5228h with the iOS 27.0 SDK. Disabling parallel testing avoids unnecessary cloned simulators and duplicate destination names.
 
 ## Simulator
 
@@ -54,4 +56,4 @@ Do not treat numerical differences from Apple Fitness as failures until the raw 
 
 ## Performance
 
-The long fixture contains 10,000 points and 4,320 heart-rate samples. Raw export retains all values; maps render a polyline and charts use native chart drawing rather than one SwiftUI view per point. CSV/XML files, manifest hashes, and ZIP payloads are streamed in bounded chunks. GPX and TCX cache the native heart-rate samples once and use logarithmic nearest-timestamp lookup rather than rescanning the complete sample set for every route point.
+The long fixture contains 10,000 points and 4,320 heart-rate samples. Raw export retains all values; display-only chart series are capped at 1,200 points. CSV/XML files, manifest hashes, and ZIP payloads are streamed in bounded chunks. GPX and TCX cache native sample series once and use logarithmic nearest-timestamp lookup rather than rescanning the complete sample set for every route point.
