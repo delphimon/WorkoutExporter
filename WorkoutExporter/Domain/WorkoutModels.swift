@@ -211,6 +211,70 @@ struct WorkoutDetail: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+extension WorkoutDetail {
+    private enum CodingKeys: String, CodingKey {
+        case summary
+        case events
+        case activities
+        case statistics
+        case samples
+        case categorySamples
+        case routes
+        case metadata
+        case derived
+        case metricSettings
+        case warnings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        summary = try container.decode(WorkoutSummary.self, forKey: .summary)
+        events = try container.decode([WorkoutEvent].self, forKey: .events)
+        activities = try container.decode([WorkoutActivitySegment].self, forKey: .activities)
+        statistics = try container.decode([NativeStatistic].self, forKey: .statistics)
+        samples = try container.decode([WorkoutSample].self, forKey: .samples)
+        categorySamples = try container.decode([CategorySample].self, forKey: .categorySamples)
+        metadata = try container.decode([String: String].self, forKey: .metadata)
+        derived = try container.decode(DerivedMetrics.self, forKey: .derived)
+        metricSettings = try container.decode(MetricCalculationSettings.self, forKey: .metricSettings)
+        warnings = try container.decode([String].self, forKey: .warnings)
+
+        if let stringKeyedRoutes = try? container.decode([String: [RoutePoint]].self, forKey: .routes) {
+            routes = try stringKeyedRoutes.reduce(into: [:]) { result, entry in
+                guard let routeID = UUID(uuidString: entry.key) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .routes,
+                        in: container,
+                        debugDescription: "Route dictionary key \(entry.key) is not a UUID."
+                    )
+                }
+                result[routeID] = entry.value
+            }
+        } else {
+            // Decode exports produced before routes switched to stable JSON object keys.
+            routes = try container.decode([UUID: [RoutePoint]].self, forKey: .routes)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(summary, forKey: .summary)
+        try container.encode(events, forKey: .events)
+        try container.encode(activities, forKey: .activities)
+        try container.encode(statistics, forKey: .statistics)
+        try container.encode(samples, forKey: .samples)
+        try container.encode(categorySamples, forKey: .categorySamples)
+        try container.encode(
+            Dictionary(uniqueKeysWithValues: routes.map { ($0.key.uuidString, $0.value) }),
+            forKey: .routes
+        )
+        try container.encode(metadata, forKey: .metadata)
+        try container.encode(derived, forKey: .derived)
+        try container.encode(metricSettings, forKey: .metricSettings)
+        try container.encode(warnings, forKey: .warnings)
+    }
+}
+
 enum WorkoutExporterError: LocalizedError, Equatable, Sendable {
     case healthKitUnavailable
     case authorizationNotRequested

@@ -223,7 +223,9 @@ enum SyntheticWorkoutFactory {
                 routeID: id,
                 sequence: index,
                 timestamp: start.addingTimeInterval(Double(index) * interval),
-                latitude: 37.7749 + Double(index) * 0.00009,
+                // Roughly 12 meters per point at this latitude, matching the
+                // fixture's summary distance and remaining above its moving threshold.
+                latitude: 37.7749 + Double(index) * 0.00011,
                 longitude: -122.4194 + sin(angle) * 0.0002,
                 altitudeMeters: altitude,
                 ellipsoidalAltitudeMeters: altitude + 31,

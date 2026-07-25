@@ -28,7 +28,7 @@ Top-level fields:
 | `routes` | Dictionary keyed by source route UUID |
 | `metadata` | Safe string representation of workout metadata |
 | `derived` | Derived metric values, provenance, splits, and warnings |
-| `metricSettings` | Exact thresholds and smoothing settings |
+| `metricSettings` | Exact thresholds used for supplemental derived metrics |
 | `warnings` | Partial-data and quality notes |
 
 Each route point includes UUID, route UUID, sequence, timestamp, latitude/longitude in decimal degrees, altitude and optional ellipsoidal altitude in meters, horizontal/vertical accuracy in meters, optional speed/speed accuracy in m/s, optional course/course accuracy in degrees, optional floor, and quality flags.

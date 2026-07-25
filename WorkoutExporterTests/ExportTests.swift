@@ -21,12 +21,18 @@ final class ExportTests: XCTestCase {
     }
 
     func testJSONContainsVersionedSchemaAndFractionalTimestamps() throws {
-        let data = try WorkoutFileExporter().json(SyntheticWorkoutFactory.make(.cleanOutdoorRun))
+        let detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        let data = try WorkoutFileExporter().json(detail)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["schemaName"] as? String, "com.delphimon.workout-export")
         XCTAssertEqual(object["schemaVersion"] as? String, "1.0.0")
         let exportedAt = try XCTUnwrap(object["exportedAt"] as? String)
         XCTAssertTrue(exportedAt.contains("."))
+        let workout = try XCTUnwrap(object["workout"] as? [String: Any])
+        let routes = try XCTUnwrap(workout["routes"] as? [String: Any])
+        XCTAssertEqual(routes.count, 1)
+        let routeID = try XCTUnwrap(detail.routes.keys.first)
+        XCTAssertNotNil(routes[routeID.uuidString])
     }
 
     func testGeneratedGPXAndTCXAreWellFormedXML() throws {
@@ -34,6 +40,16 @@ final class ExportTests: XCTestCase {
         let exporter = WorkoutFileExporter()
         XCTAssertTrue(XMLValidator.validate(exporter.gpx(detail)))
         XCTAssertTrue(XMLValidator.validate(exporter.tcx(detail)))
+    }
+
+    func testWorkoutDetailRoutesRoundTripAsJSONObject() throws {
+        let detail = SyntheticWorkoutFactory.make(.multipleRouteSegments)
+        let data = try JSONEncoder().encode(detail)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual((object["routes"] as? [String: Any])?.count, detail.routes.count)
+
+        let decoded = try JSONDecoder().decode(WorkoutDetail.self, from: data)
+        XCTAssertEqual(decoded.routes, detail.routes)
     }
 
     func testCSVHasAllRequiredFilesAndCRLF() {
