@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ExportView: View {
-    let details: [WorkoutDetail]
+    let requests: [WorkoutExportRequest]
     @Environment(AppEnvironment.self) private var environment
     @Environment(UserSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
@@ -28,20 +28,17 @@ struct ExportView: View {
                     Toggle("GPS route", isOn: $options.includeRoute)
                     Toggle("Source and device metadata", isOn: $options.includeSourceAndDevice)
                 }
-                Section("Calculations") {
-                    Picker("Moving time", selection: $options.movingTimeMethod) {
-                        ForEach(MovingTimeMethod.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
-                    }
-                    Picker("Presentation units", selection: $options.units) {
-                        ForEach(DistanceUnitPreference.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
+                Section {
+                    Text("Exported measurements retain their canonical HealthKit or SI units. The app does not convert or replace workout values.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 if isExporting {
                     Section {
                         ProgressView(
                             exportProgress?.message
-                                ?? "Preparing \(details.count) workout\(details.count == 1 ? "" : "s")…"
+                                ?? "Preparing \(requests.count) workout\(requests.count == 1 ? "" : "s")…"
                         )
                         Button("Cancel", role: .destructive) { exportTask?.cancel() }
                     }
@@ -67,11 +64,12 @@ struct ExportView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { createExport() }
                         .disabled(isExporting || options.formats.isEmpty)
+                        .accessibilityIdentifier("create-export-button")
                 }
             }
             .onAppear {
                 options.formats = settings.defaultFormats
-                options.units = settings.distanceUnits
+                options.filenameFormat = settings.filenameFormat
                 options.includeRawSamples = settings.includeRawSamples
                 options.includeSourceAndDevice = settings.includeSourceMetadata
                 options.packageAsZIP = settings.packageAsZIP
@@ -103,9 +101,9 @@ struct ExportView: View {
             }
             do {
                 let directory = environment.exportDirectory
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try ExportUtilities.createProtectedDirectory(at: directory)
                 outputURL = try await environment.packageBuilder.buildPackage(
-                    for: details,
+                    for: requests,
                     options: options,
                     to: directory
                 ) { update in
@@ -129,28 +127,17 @@ struct BatchExportView: View {
     let workoutIDs: [UUID]
     @Environment(AppEnvironment.self) private var environment
     @Environment(UserSettings.self) private var settings
-    @State private var details: [WorkoutDetail] = []
-    @State private var errorMessage: String?
 
     var body: some View {
-        Group {
-            if !details.isEmpty {
-                ExportView(details: details)
-            } else if let errorMessage {
-                ContentUnavailableView("Could Not Prepare Export", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
-            } else {
-                ProgressView("Loading selected workouts…")
-            }
-        }
-        .task {
-            do {
-                var loaded: [WorkoutDetail] = []
-                for id in workoutIDs {
-                    loaded.append(try await environment.healthClient.fetchWorkoutDetail(id: id, settings: settings.metricSettings))
-                }
-                details = loaded
-            } catch {
-                errorMessage = error.localizedDescription
+        ExportView(requests: exportRequests)
+    }
+
+    private var exportRequests: [WorkoutExportRequest] {
+        let client = environment.healthClient
+        let metricSettings = settings.metricSettings
+        return workoutIDs.map { id in
+            WorkoutExportRequest(id: id) {
+                try await client.fetchWorkoutDetail(id: id, settings: metricSettings)
             }
         }
     }

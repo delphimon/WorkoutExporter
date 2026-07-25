@@ -1,5 +1,9 @@
 import Foundation
 
+enum ExportSchema {
+    static let version = "1.1.0"
+}
+
 enum ExportFormat: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case json
     case csv
@@ -12,13 +16,12 @@ enum ExportFormat: String, Codable, CaseIterable, Hashable, Identifiable, Sendab
 
 struct ExportOptions: Codable, Hashable, Sendable {
     var formats: Set<ExportFormat> = Set(ExportFormat.allCases)
-    var units: DistanceUnitPreference = .metric
     var includeRawSamples = true
     var includeDerivedMetrics = true
     var includeHeartRate = true
     var includeRoute = true
     var includeSourceAndDevice = true
-    var movingTimeMethod: MovingTimeMethod = .eventAware
+    var filenameFormat: ExportFilenameFormat = .dateActivityIdentifier
     var packageAsZIP = true
 }
 
@@ -32,6 +35,7 @@ struct ExportProgress: Equatable, Sendable {
         case manifest
         case archiving
         case finalizing
+        case partialFailure
     }
 
     var phase: Phase
@@ -48,6 +52,7 @@ struct ExportProgress: Equatable, Sendable {
         case .manifest: "Calculating file checksums"
         case .archiving: "Creating ZIP archive"
         case .finalizing: "Finalizing export"
+        case .partialFailure: "Continuing after a partial-data failure"
         }
         guard totalWorkouts > 1 else { return action }
         return "\(action) · workout \(min(completedWorkouts + 1, totalWorkouts)) of \(totalWorkouts)"
@@ -63,16 +68,17 @@ struct ExportFileEntry: Codable, Hashable, Sendable {
 
 struct ExportManifest: Codable, Hashable, Sendable {
     var schemaName = "com.delphimon.workout-export-package"
-    var schemaVersion = "1.0.0"
+    var schemaVersion = ExportSchema.version
     var createdAt: Date
     var exporterVersion: String
     var files: [ExportFileEntry]
     var warnings: [String]
+    var formats: [ExportFormat]? = nil
 }
 
 struct WorkoutExportEnvelope: Codable, Hashable, Sendable {
     var schemaName = "com.delphimon.workout-export"
-    var schemaVersion = "1.0.0"
+    var schemaVersion = ExportSchema.version
     var exporterVersion: String
     var exportedAt: Date
     var timeZoneIdentifier: String

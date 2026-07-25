@@ -21,4 +21,10 @@ final class UnitPreferenceTests: XCTestCase {
         XCTAssertTrue(MeasurementFormatterFactory.speed(1, preference: .metric).contains("km/h"))
         XCTAssertTrue(MeasurementFormatterFactory.speed(1, preference: .usCustomary).contains("mph"))
     }
+
+    func testExportOptionsAndFilenamePreferencesRoundTrip() throws {
+        var options = ExportOptions()
+        options.filenameFormat = .activityDateIdentifier
+        XCTAssertEqual(try JSONDecoder().decode(ExportOptions.self, from: JSONEncoder().encode(options)), options)
+    }
 }

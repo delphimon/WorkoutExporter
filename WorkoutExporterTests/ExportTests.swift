@@ -11,6 +11,24 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(ExportUtilities.csv("a\nb"), "\"a\nb\"")
     }
 
+    func testSpreadsheetCSVNeutralizesFormulaPrefixes() {
+        XCTAssertEqual(
+            ExportUtilities.spreadsheetSafeCSV("=HYPERLINK(\"bad\")"),
+            "\"'=HYPERLINK(\"\"bad\"\")\""
+        )
+        XCTAssertEqual(ExportUtilities.spreadsheetSafeCSV("  +1"), "'  +1")
+        XCTAssertEqual(ExportUtilities.spreadsheetSafeCSV("ordinary"), "ordinary")
+    }
+
+    func testMetadataAllowlistDropsUnknownObjectDescriptions() {
+        let metadata = HealthKitMappings.safeMetadata([
+            "safe": "value",
+            "unknown": NSObject()
+        ])
+
+        XCTAssertEqual(metadata, ["safe": "value"])
+    }
+
     func testFilenameIsSafeAndDeterministic() {
         var summary = SyntheticWorkoutFactory.make(.cleanOutdoorRun).summary
         summary.activityName = "Run / Trail: 5K 🚀"
@@ -19,6 +37,9 @@ final class ExportTests: XCTestCase {
         XCTAssertFalse(first.contains("/"))
         XCTAssertFalse(first.contains(":"))
         XCTAssertLessThanOrEqual(first.count, 255)
+        let alternate = ExportUtilities.safeFilename(for: summary, format: .activityDateIdentifier)
+        XCTAssertTrue(alternate.hasPrefix("run-trail-5k"))
+        XCTAssertNotEqual(first, alternate)
     }
 
     func testJSONContainsVersionedSchemaAndFractionalTimestamps() throws {
@@ -26,7 +47,7 @@ final class ExportTests: XCTestCase {
         let data = try WorkoutFileExporter().json(detail)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["schemaName"] as? String, "com.delphimon.workout-export")
-        XCTAssertEqual(object["schemaVersion"] as? String, "1.0.0")
+        XCTAssertEqual(object["schemaVersion"] as? String, "1.1.0")
         let exportedAt = try XCTUnwrap(object["exportedAt"] as? String)
         XCTAssertTrue(exportedAt.contains("."))
         let workout = try XCTUnwrap(object["workout"] as? [String: Any])
@@ -102,11 +123,74 @@ final class ExportTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         let manifest = try decoder.decode(ExportManifest.self, from: Data(contentsOf: manifestURL))
         XCTAssertFalse(manifest.files.isEmpty)
+        XCTAssertEqual(Set(manifest.formats ?? []), options.formats)
         for entry in manifest.files {
             let content = try Data(contentsOf: workoutFolder.appending(path: entry.path))
             XCTAssertEqual(entry.byteSize, content.count)
             XCTAssertEqual(entry.sha256, ExportUtilities.sha256(content))
         }
+    }
+
+    func testGPXPreservesEveryRoutePointAndSeparatesRouteObjects() throws {
+        let detail = SyntheticWorkoutFactory.make(.multipleRouteSegments)
+        let xml = String(decoding: try WorkoutFileExporter().gpx(detail), as: UTF8.self)
+
+        XCTAssertEqual(xml.components(separatedBy: "<trkseg>").count - 1, detail.routes.count)
+        XCTAssertEqual(xml.components(separatedBy: "<trkpt ").count - 1, detail.routePoints.count)
+        XCTAssertTrue(xml.contains("<gpxtpx:hr>"))
+        XCTAssertTrue(xml.contains("<gpxtpx:speed>"))
+    }
+
+    func testBatchContinuesAfterOneWorkoutExportFails() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        let failed = SyntheticWorkoutFactory.make(.hikeWithStops, index: 1)
+        var options = ExportOptions()
+        options.packageAsZIP = false
+        options.formats = [.json]
+
+        let package = try await ExportPackageBuilder(
+            exporter: SelectiveFailingExporter(failedID: failed.id)
+        ).buildPackage(for: [first, failed], options: options, to: root)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: package.appending(path: "export-warnings.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: package.appending(path: "index.csv").path))
+        let folders = try FileManager.default.contentsOfDirectory(
+            at: package,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+        XCTAssertEqual(folders.count, 1)
+    }
+
+    func testBatchContinuesWhenOneWorkoutCannotBeLoaded() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        let failedID = UUID()
+        var options = ExportOptions()
+        options.packageAsZIP = false
+        options.formats = [.json]
+
+        let package = try await ExportPackageBuilder().buildPackage(
+            for: [
+                .loaded(first),
+                WorkoutExportRequest(id: failedID) {
+                    throw WorkoutExporterError.queryFailure("Synthetic expected load failure")
+                }
+            ],
+            options: options,
+            to: root
+        )
+
+        let warning = try String(
+            contentsOf: package.appending(path: "export-warnings.txt"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(warning.contains(failedID.uuidString))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: package.appending(path: "index.csv").path))
     }
 
     func testZIPStartsWithLocalFileHeader() async throws {
@@ -211,6 +295,125 @@ final class ExportTests: XCTestCase {
         let source = try XCTUnwrap(summary["source"] as? [String: Any])
         XCTAssertEqual(source["name"] as? String, "Redacted")
     }
+
+    func testHeartRateRedactionIsExhaustive() async throws {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.derived = try await WorkoutMetricCalculator().calculate(detail: detail)
+        detail.metricSettings.heartRateZones.maximumHeartRateBPM = 205
+        detail.metricSettings.heartRateZones.restingHeartRateBPM = 48
+        XCTAssertFalse(detail.derived.splits.isEmpty)
+        var options = ExportOptions()
+        options.includeHeartRate = false
+
+        let filtered = ExportPackageBuilder.filtered(detail, options: options)
+
+        XCTAssertFalse(filtered.samples.contains {
+            $0.typeIdentifier.localizedCaseInsensitiveContains("heartRate")
+        })
+        XCTAssertFalse(filtered.statistics.contains {
+            $0.typeIdentifier.localizedCaseInsensitiveContains("heartRate")
+        })
+        XCTAssertNil(filtered.summary.averageHeartRateBPM)
+        XCTAssertNil(filtered.derived.averageHeartRateBPM)
+        XCTAssertNil(filtered.derived.minimumHeartRateBPM)
+        XCTAssertNil(filtered.derived.maximumHeartRateBPM)
+        XCTAssertNil(filtered.derived.heartRateZones)
+        XCTAssertEqual(filtered.metricSettings.heartRateZones.maximumHeartRateBPM, 0)
+        XCTAssertEqual(filtered.metricSettings.heartRateZones.restingHeartRateBPM, 0)
+        XCTAssertTrue(filtered.metricSettings.heartRateZones.manualUpperBoundsBPM.isEmpty)
+        XCTAssertTrue(filtered.derived.splits.allSatisfy {
+            $0.averageHeartRateBPM == nil && $0.maximumHeartRateBPM == nil
+        })
+    }
+
+    func testRouteRedactionRemovesCoordinatesAndDerivedRouteDataButPreservesNativeSummary() async throws {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.derived = try await WorkoutMetricCalculator().calculate(detail: detail)
+        let nativeDistance = detail.summary.totalDistanceMeters
+        let nativeGain = detail.summary.elevationGainMeters
+        var options = ExportOptions()
+        options.includeRoute = false
+
+        let filtered = ExportPackageBuilder.filtered(detail, options: options)
+
+        XCTAssertTrue(filtered.routes.isEmpty)
+        XCTAssertFalse(filtered.summary.hasRoute)
+        XCTAssertEqual(filtered.summary.totalDistanceMeters, nativeDistance)
+        XCTAssertEqual(filtered.summary.elevationGainMeters, nativeGain)
+        XCTAssertNil(filtered.derived.routeDistanceMeters)
+        XCTAssertNil(filtered.derived.speedThresholdMovingTime)
+        XCTAssertNil(filtered.derived.routeMetrics)
+        XCTAssertNil(filtered.derived.elevationLossMeters)
+        XCTAssertNil(filtered.derived.minimumAltitudeMeters)
+        XCTAssertNil(filtered.derived.maximumAltitudeMeters)
+        XCTAssertTrue(filtered.derived.splits.isEmpty)
+    }
+
+    func testSourceAndDeviceRedactionClearsEveryMetadataDictionary() {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.samples[0].metadata = ["secret": "sample"]
+        detail.categorySamples = [
+            CategorySample(
+                id: UUID(),
+                typeIdentifier: "category",
+                startDate: detail.summary.startDate,
+                endDate: detail.summary.endDate,
+                value: 1,
+                source: detail.summary.source,
+                metadata: ["secret": "category"]
+            )
+        ]
+        detail.events = [
+            WorkoutEvent(
+                id: UUID(),
+                kind: .marker,
+                startDate: detail.summary.startDate,
+                metadata: ["secret": "event"]
+            )
+        ]
+        detail.activities = [
+            WorkoutActivitySegment(
+                id: UUID(),
+                activityIdentifier: detail.summary.activityIdentifier,
+                activityName: detail.summary.activityName,
+                startDate: detail.summary.startDate,
+                endDate: detail.summary.endDate,
+                metadata: ["secret": "activity"]
+            )
+        ]
+        detail.metadata = ["secret": "workout"]
+        var options = ExportOptions()
+        options.includeSourceAndDevice = false
+
+        let filtered = ExportPackageBuilder.filtered(detail, options: options)
+
+        XCTAssertEqual(filtered.summary.source.name, "Redacted")
+        XCTAssertNil(filtered.summary.device)
+        XCTAssertTrue(filtered.metadata.isEmpty)
+        XCTAssertTrue(filtered.samples.allSatisfy {
+            $0.source.name == "Redacted" && $0.device == nil && $0.metadata.isEmpty
+        })
+        XCTAssertTrue(filtered.categorySamples.allSatisfy {
+            $0.source.name == "Redacted" && $0.metadata.isEmpty
+        })
+        XCTAssertTrue(filtered.events.allSatisfy(\.metadata.isEmpty))
+        XCTAssertTrue(filtered.activities.allSatisfy(\.metadata.isEmpty))
+    }
+
+    func testProtectedExportFilesUseCompleteProtection() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try ExportUtilities.createProtectedDirectory(at: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appending(path: "protected.json")
+        try ExportUtilities.writeProtected(Data("{}".utf8), to: file)
+
+        #if targetEnvironment(simulator)
+        throw XCTSkip("The iOS Simulator filesystem does not expose NSFileProtection attributes.")
+        #elseif os(iOS)
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        XCTAssertEqual(attributes[.protectionKey] as? FileProtectionType, .complete)
+        #endif
+    }
 }
 
 private actor ExportProgressRecorder {
@@ -242,6 +445,25 @@ private struct ThreadRecordingExporter: WorkoutExporting {
         await recorder.append(isMainThread)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return []
+    }
+}
+
+private struct SelectiveFailingExporter: WorkoutExporting {
+    let failedID: UUID
+
+    func export(
+        _ detail: WorkoutDetail,
+        formats: Set<ExportFormat>,
+        to directory: URL,
+        progress: nonisolated(nonsending) @escaping @Sendable (ExportProgress.Phase) async -> Void
+    ) async throws -> [URL] {
+        if detail.id == failedID {
+            throw WorkoutExporterError.fileWriteFailure("Synthetic expected failure")
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let output = directory.appending(path: "workout.json")
+        try Data("{}".utf8).write(to: output)
+        return [output]
     }
 }
 

@@ -18,6 +18,7 @@ struct ZIPArchiveWriter: Sendable {
                   FileManager.default.createFile(atPath: temporaryURL.path, contents: nil) else {
                 throw WorkoutExporterError.zipCreationFailure("The archive exceeded ZIP32 limits or could not be created.")
             }
+            try ExportUtilities.applyCompleteFileProtection(to: temporaryURL)
             let output = try FileHandle(forWritingTo: temporaryURL)
             defer { try? output.close() }
             var entries: [CentralDirectoryEntry] = []
@@ -113,12 +114,7 @@ struct ZIPArchiveWriter: Sendable {
             } else {
                 try FileManager.default.moveItem(at: temporaryURL, to: destination)
             }
-#if os(iOS)
-            try FileManager.default.setAttributes(
-                [.protectionKey: FileProtectionType.complete],
-                ofItemAtPath: destination.path
-            )
-#endif
+            try ExportUtilities.applyCompleteFileProtection(to: destination)
             shouldRemoveTemporary = false
         } catch is CancellationError {
             throw CancellationError()

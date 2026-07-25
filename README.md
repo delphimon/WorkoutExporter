@@ -2,16 +2,16 @@
 
 Workout Exporter is a local-first iPhone app for browsing Apple Health workouts, inspecting route and sensor detail, calculating transparent derived metrics, and exporting documented files for use on any platform.
 
-> Screenshots will be added after real-device visual QA.
+> Screenshot capture slots and the real-device QA checklist are in [`Screenshots/README.md`](Screenshots/README.md).
 
 ## Requirements
 
-- Xcode 26.6 (build 17F113) or later compatible version
+- Xcode 27.0 beta (build 27A5228h), installed as `/Applications/Xcode-beta.app`
 - iOS 17.0 deployment target
 - Swift 6 language mode with complete strict-concurrency checking
 - A real iPhone for HealthKit validation; Simulator uses deterministic sample workouts
 
-The implementation was verified against the installed iOS 26.5 SDK. It uses the async `HKHealthStore.requestAuthorization`, `HKSampleQueryDescriptor`, and `HKWorkoutRouteQueryDescriptor` APIs. Apple documents that read denial is intentionally indistinguishable from an empty or limited result set:
+The implementation is compiled against the iOS 27.0 SDK with Xcode beta. It uses async `HKHealthStore.requestAuthorization`, `HKSampleQueryDescriptor`, and `HKWorkoutRouteQueryDescriptor` APIs. Apple documents that read denial is intentionally indistinguishable from an empty or limited result set:
 
 - [Authorizing access to health data](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)
 - [Running queries with Swift concurrency](https://developer.apple.com/documentation/healthkit/running-queries-with-swift-concurrency)
@@ -27,7 +27,8 @@ The implementation was verified against the installed iOS 26.5 SDK. It uses the 
 Command-line build:
 
 ```sh
-xcodebuild -project WorkoutExporter.xcodeproj \
+/Applications/Xcode-beta.app/Contents/Developer/usr/bin/xcodebuild \
+  -project WorkoutExporter.xcodeproj \
   -scheme WorkoutExporter \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
   CODE_SIGNING_ALLOWED=NO build
@@ -60,9 +61,11 @@ There are no accounts, analytics, ads, remote APIs, automatic uploads, or backgr
 ## Tests
 
 ```sh
-xcodebuild test -project WorkoutExporter.xcodeproj \
+/Applications/Xcode-beta.app/Contents/Developer/usr/bin/xcodebuild test \
+  -project WorkoutExporter.xcodeproj \
   -scheme WorkoutExporter \
-  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -destination 'platform=iOS Simulator,OS=26.5,name=iPhone 17' \
+  -parallel-testing-enabled NO
 ```
 
 Distance, pace, speed, and elevation presentation always follow the selected metric or US customary scheme. Canonical exported raw values retain their original units and unit labels.

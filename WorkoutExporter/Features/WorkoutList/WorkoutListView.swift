@@ -37,7 +37,9 @@ struct WorkoutListView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Filter", systemImage: "line.3.horizontal.decrease.circle") { showFilters = true }
+                    .accessibilityIdentifier("workout-filter-button")
                 Button("Settings", systemImage: "gearshape") { showSettings = true }
+                    .accessibilityIdentifier("workout-settings-button")
             }
             ToolbarItem(placement: .topBarLeading) {
                 Button(model.isSelecting ? "Done" : "Select") {
@@ -88,9 +90,27 @@ struct WorkoutListView: View {
                     NavigationLink(value: workout) {
                         WorkoutRow(workout: workout, units: settings.distanceUnits)
                     }
+                    .accessibilityIdentifier("workout-row-\(workout.id.uuidString)")
+                }
+                if workout.id == model.filteredWorkouts.last?.id, model.canLoadMore {
+                    Button("Load More Workouts") {
+                        Task { await model.loadMore(using: environment.healthClient) }
+                    }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("load-more-workouts-button")
                 }
             }
             .listStyle(.plain)
+            .accessibilityIdentifier("workout-list")
+            .safeAreaInset(edge: .bottom) {
+                if let message = model.paginationError {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(8)
+                        .background(.regularMaterial, in: .rect(cornerRadius: 8))
+                }
+            }
             .navigationDestination(for: WorkoutSummary.self) { workout in
                 WorkoutDetailView(workout: workout)
             }
@@ -120,7 +140,10 @@ private struct WorkoutRow: View {
                 Label(MeasurementFormatterFactory.duration(workout.duration), systemImage: "clock")
                 Label(MeasurementFormatterFactory.distance(workout.totalDistanceMeters, preference: units), systemImage: "arrow.left.and.right")
                 if let heartRate = workout.averageHeartRateBPM {
-                    Label("\(Int(heartRate.rounded()))", systemImage: "heart.fill")
+                    Label("\(Int(heartRate.rounded())) bpm", systemImage: "heart.fill")
+                }
+                if let energy = workout.activeEnergyKilocalories {
+                    Label("\(Int(energy.rounded())) kcal", systemImage: "flame")
                 }
             }
             .font(.caption)
@@ -137,6 +160,7 @@ private struct WorkoutRow: View {
 private struct WorkoutFilterView: View {
     @Bindable var model: WorkoutListViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(UserSettings.self) private var settings
 
     var body: some View {
         NavigationStack {
@@ -144,11 +168,39 @@ private struct WorkoutFilterView: View {
                 Picker("Activity", selection: $model.selectedActivity) {
                     ForEach(model.activityOptions, id: \.self) { Text($0) }
                 }
+                Picker("Source", selection: $model.selectedSource) {
+                    ForEach(model.sourceOptions, id: \.self) { Text($0) }
+                }
+                Picker("Date", selection: $model.dateRange) {
+                    ForEach(WorkoutListViewModel.DateRange.allCases, id: \.self) {
+                        Text($0.rawValue).tag($0)
+                    }
+                }
+                Picker("Sort", selection: $model.sortOrder) {
+                    ForEach(WorkoutListViewModel.SortOrder.allCases, id: \.self) {
+                        Text($0.rawValue).tag($0)
+                    }
+                }
                 Toggle("Has GPS route", isOn: $model.routeOnly)
+                Toggle("Has heart-rate data", isOn: $model.heartRateOnly)
                 VStack(alignment: .leading) {
                     Text("Minimum duration: \(Int(model.minimumDurationMinutes)) minutes")
                     Slider(value: $model.minimumDurationMinutes, in: 0...180, step: 5)
                 }
+                VStack(alignment: .leading) {
+                    Text(
+                        "Minimum distance: "
+                            + MeasurementFormatterFactory.distance(
+                                model.minimumDistanceMeters,
+                                preference: settings.distanceUnits
+                            )
+                    )
+                    Slider(value: $model.minimumDistanceMeters, in: 0...50_000, step: 500)
+                }
+                Button("Reset Filters", role: .destructive) {
+                    model.resetFilters()
+                }
+                .accessibilityIdentifier("reset-filters-button")
             }
             .navigationTitle("Filters")
             .toolbar {

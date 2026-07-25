@@ -9,7 +9,7 @@ struct WorkoutFileExporter: WorkoutExporting {
     ) async throws -> [URL] {
         try Task.checkCancellation()
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try ExportUtilities.createProtectedDirectory(at: directory)
             var output: [URL] = []
             for format in formats.sorted(by: { $0.rawValue < $1.rawValue }) {
                 try Task.checkCancellation()
@@ -17,7 +17,7 @@ struct WorkoutFileExporter: WorkoutExporting {
                 switch format {
                 case .json:
                     let url = directory.appending(path: "workout.json")
-                    try json(detail).write(to: url, options: .atomic)
+                    try ExportUtilities.writeProtected(json(detail), to: url)
                     output.append(url)
                 case .csv:
                     output.append(contentsOf: try writeCSVFiles(detail, to: directory))
@@ -103,22 +103,46 @@ struct WorkoutFileExporter: WorkoutExporting {
             """
         )
         let heartRateLookup = HeartRateLookup(samples: detail.heartRateSamples)
+        let cadenceLookup = HeartRateLookup(samples: detail.samples.filter {
+            $0.typeIdentifier.localizedCaseInsensitiveContains("cadence")
+        })
+        let temperatureLookup = HeartRateLookup(samples: detail.samples.filter {
+            $0.typeIdentifier.localizedCaseInsensitiveContains("temperature")
+        })
         let routes = detail.routes.values.sorted {
             ($0.first?.timestamp ?? .distantFuture) < ($1.first?.timestamp ?? .distantFuture)
         }
         for points in routes {
             try Task.checkCancellation()
-            try writer.write("    <trkseg>\n")
-            for (index, point) in points.sorted(by: { $0.sequence < $1.sequence }).enumerated() {
-                try checkCancellation(at: index)
-                let extensionXML = heartRateLookup.value(nearestTo: point.timestamp).map {
-                    "<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>\(Int($0.rounded()))</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>"
-                } ?? ""
-                try writer.write(
-                    "      <trkpt lat=\"\(point.latitude)\" lon=\"\(point.longitude)\"><ele>\(point.altitudeMeters)</ele><time>\(ExportUtilities.date(point.timestamp))</time>\(extensionXML)</trkpt>\n"
-                )
+            for segment in exportSegments(
+                points: points.sorted(by: { $0.sequence < $1.sequence }),
+                maximumGap: detail.metricSettings.maximumRouteGap
+            ) {
+                try writer.write("    <trkseg>\n")
+                for (index, point) in segment.enumerated() {
+                    try checkCancellation(at: index)
+                    var extensions: [String] = []
+                    if let value = heartRateLookup.value(nearestTo: point.timestamp) {
+                        extensions.append("<gpxtpx:hr>\(Int(value.rounded()))</gpxtpx:hr>")
+                    }
+                    if let value = cadenceLookup.value(nearestTo: point.timestamp) {
+                        extensions.append("<gpxtpx:cad>\(Int(value.rounded()))</gpxtpx:cad>")
+                    }
+                    if let value = temperatureLookup.value(nearestTo: point.timestamp) {
+                        extensions.append("<gpxtpx:atemp>\(value)</gpxtpx:atemp>")
+                    }
+                    if let value = point.speedMetersPerSecond {
+                        extensions.append("<gpxtpx:speed>\(value)</gpxtpx:speed>")
+                    }
+                    let extensionXML = extensions.isEmpty
+                        ? ""
+                        : "<extensions><gpxtpx:TrackPointExtension>\(extensions.joined())</gpxtpx:TrackPointExtension></extensions>"
+                    try writer.write(
+                        "      <trkpt lat=\"\(point.latitude)\" lon=\"\(point.longitude)\"><ele>\(point.altitudeMeters)</ele><time>\(ExportUtilities.date(point.timestamp))</time>\(extensionXML)</trkpt>\n"
+                    )
+                }
+                try writer.write("    </trkseg>\n")
             }
-            try writer.write("    </trkseg>\n")
         }
         try writer.write("  </trk>\n</gpx>\n")
     }
@@ -126,24 +150,44 @@ struct WorkoutFileExporter: WorkoutExporting {
     private func writeTCX(_ detail: WorkoutDetail, to writer: any ExportTextWriting) throws {
         let distance = detail.summary.totalDistanceMeters ?? detail.derived.routeDistanceMeters?.value ?? 0
         let calories = Int((detail.summary.activeEnergyKilocalories ?? 0).rounded())
+        let maximumSpeedXML = detail.derived.maximumSpeedMetersPerSecond.map {
+            "<MaximumSpeed>\($0.value)</MaximumSpeed>"
+        } ?? ""
         try writer.write(
             """
             <?xml version="1.0" encoding="UTF-8"?>
-            <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+            <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
               <Activities><Activity Sport="\(tcxSport(detail.summary.activityName))"><Id>\(ExportUtilities.date(detail.summary.startDate))</Id>
-                <Lap StartTime="\(ExportUtilities.date(detail.summary.startDate))"><TotalTimeSeconds>\(detail.summary.duration)</TotalTimeSeconds><DistanceMeters>\(distance)</DistanceMeters><Calories>\(calories)</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod><Track>
+                <Lap StartTime="\(ExportUtilities.date(detail.summary.startDate))"><TotalTimeSeconds>\(detail.summary.duration)</TotalTimeSeconds><DistanceMeters>\(distance)</DistanceMeters>\(maximumSpeedXML)<Calories>\(calories)</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod><Track>
 
             """
         )
         let heartRateLookup = HeartRateLookup(samples: detail.heartRateSamples)
+        let cadenceLookup = HeartRateLookup(samples: detail.samples.filter {
+            $0.typeIdentifier.localizedCaseInsensitiveContains("cadence")
+        })
+        let routeMetrics = Dictionary(
+            uniqueKeysWithValues: (detail.derived.routeMetrics ?? []).map { ($0.routePointID, $0) }
+        )
         for (index, point) in detail.routePoints.enumerated() {
             try checkCancellation(at: index)
             let heartRate = heartRateLookup.value(nearestTo: point.timestamp)
             let heartRateXML = heartRate.map {
                 "<HeartRateBpm><Value>\(Int($0.rounded()))</Value></HeartRateBpm>"
             } ?? ""
+            let cadenceXML = cadenceLookup.value(nearestTo: point.timestamp).map {
+                "<Cadence>\(Int($0.rounded()))</Cadence>"
+            } ?? ""
+            let metric = routeMetrics[point.id]
+            let distanceXML = metric.map {
+                "<DistanceMeters>\($0.cumulativeDistanceMeters)</DistanceMeters>"
+            } ?? ""
+            let speed = point.speedMetersPerSecond ?? metric?.derivedSpeedMetersPerSecond
+            let extensionXML = speed.map {
+                "<Extensions><ns3:TPX><ns3:Speed>\($0)</ns3:Speed></ns3:TPX></Extensions>"
+            } ?? ""
             try writer.write(
-                "      <Trackpoint><Time>\(ExportUtilities.date(point.timestamp))</Time><Position><LatitudeDegrees>\(point.latitude)</LatitudeDegrees><LongitudeDegrees>\(point.longitude)</LongitudeDegrees></Position><AltitudeMeters>\(point.altitudeMeters)</AltitudeMeters>\(heartRateXML)</Trackpoint>\n"
+                "      <Trackpoint><Time>\(ExportUtilities.date(point.timestamp))</Time><Position><LatitudeDegrees>\(point.latitude)</LatitudeDegrees><LongitudeDegrees>\(point.longitude)</LongitudeDegrees></Position><AltitudeMeters>\(point.altitudeMeters)</AltitudeMeters>\(distanceXML)\(heartRateXML)\(cadenceXML)\(extensionXML)</Trackpoint>\n"
             )
         }
         try writer.write(
@@ -160,51 +204,40 @@ struct WorkoutFileExporter: WorkoutExporting {
         for (index, sample) in detail.samples.enumerated() {
             try checkCancellation(at: index)
             let columns = [
-                detail.id.uuidString,
-                sample.typeIdentifier,
-                ExportUtilities.date(sample.startDate),
-                ExportUtilities.date(sample.endDate),
-                String(sample.value),
-                sample.unit,
-                sample.source.name,
-                sample.source.bundleIdentifier,
-                sample.device?.name ?? "",
-                sample.provenance.rawValue,
-                ExportUtilities.metadataJSON(sample.metadata)
+                ExportUtilities.csv(detail.id.uuidString),
+                ExportUtilities.csv(sample.typeIdentifier),
+                ExportUtilities.csv(ExportUtilities.date(sample.startDate)),
+                ExportUtilities.csv(ExportUtilities.date(sample.endDate)),
+                ExportUtilities.csv(String(sample.value)),
+                ExportUtilities.csv(sample.unit),
+                ExportUtilities.spreadsheetSafeCSV(sample.source.name),
+                ExportUtilities.spreadsheetSafeCSV(sample.source.bundleIdentifier),
+                ExportUtilities.spreadsheetSafeCSV(sample.device?.name ?? ""),
+                ExportUtilities.csv(sample.provenance.rawValue),
+                ExportUtilities.csv(ExportUtilities.metadataJSON(sample.metadata))
             ]
-            try writer.write(columns.map(ExportUtilities.csv).joined(separator: ",") + "\r\n")
+            try writer.write(columns.joined(separator: ",") + "\r\n")
         }
     }
 
     private func writeRouteCSV(_ detail: WorkoutDetail, to writer: any ExportTextWriting) throws {
-        try writer.write("workout_id,route_id,sequence,timestamp,latitude,longitude,altitude_m,horizontal_accuracy_m,vertical_accuracy_m,speed_mps,speed_accuracy_mps,course_deg,course_accuracy_deg,segment_distance_m,cumulative_distance_m,derived_speed_mps,smoothed_speed_mps,grade,quality_flags\r\n")
-        var cumulative = 0.0
-        var previous: RoutePoint?
+        try writer.write("workout_id,route_id,sequence,timestamp,latitude,longitude,altitude_m,horizontal_accuracy_m,vertical_accuracy_m,speed_mps,speed_accuracy_mps,course_deg,course_accuracy_deg,segment_distance_m,cumulative_distance_m,derived_speed_mps,grade,quality_flags\r\n")
+        let routeMetrics = Dictionary(
+            uniqueKeysWithValues: (detail.derived.routeMetrics ?? []).map { ($0.routePointID, $0) }
+        )
         for (index, point) in detail.routePoints.enumerated() {
             try checkCancellation(at: index)
-            let segmentDistance: Double
-            let derivedSpeed: Double?
-            if let previous, previous.routeID == point.routeID {
-                let latitudeScale = 111_132.0
-                let longitudeScale = 111_320.0 * cos(point.latitude * .pi / 180)
-                let latitudeDelta = (point.latitude - previous.latitude) * latitudeScale
-                let longitudeDelta = (point.longitude - previous.longitude) * longitudeScale
-                segmentDistance = hypot(longitudeDelta, latitudeDelta)
-                let timeDelta = point.timestamp.timeIntervalSince(previous.timestamp)
-                derivedSpeed = timeDelta > 0 ? segmentDistance / timeDelta : nil
-            } else {
-                segmentDistance = 0
-                derivedSpeed = nil
-            }
-            cumulative += segmentDistance
-            previous = point
+            let metric = routeMetrics[point.id]
             let columns = [
                 detail.id.uuidString, point.routeID.uuidString, String(point.sequence),
                 ExportUtilities.date(point.timestamp), String(point.latitude), String(point.longitude),
                 String(point.altitudeMeters), String(point.horizontalAccuracyMeters), String(point.verticalAccuracyMeters),
                 optionalString(point.speedMetersPerSecond), optionalString(point.speedAccuracyMetersPerSecond),
                 optionalString(point.courseDegrees), optionalString(point.courseAccuracyDegrees),
-                String(segmentDistance), String(cumulative), optionalString(derivedSpeed), "", "",
+                optionalString(metric?.segmentDistanceMeters),
+                optionalString(metric?.cumulativeDistanceMeters),
+                optionalString(metric?.derivedSpeedMetersPerSecond),
+                optionalString(metric?.grade),
                 point.qualityFlags.joined(separator: "|")
             ]
             try writer.write(columns.map(ExportUtilities.csv).joined(separator: ",") + "\r\n")
@@ -291,6 +324,23 @@ struct WorkoutFileExporter: WorkoutExporting {
         }
     }
 
+    private func exportSegments(
+        points: [RoutePoint],
+        maximumGap: TimeInterval
+    ) -> [[RoutePoint]] {
+        guard let first = points.first else { return [] }
+        var result: [[RoutePoint]] = [[first]]
+        for point in points.dropFirst() {
+            if let previous = result[result.count - 1].last,
+               point.timestamp.timeIntervalSince(previous.timestamp) > maximumGap {
+                result.append([point])
+            } else {
+                result[result.count - 1].append(point)
+            }
+        }
+        return result
+    }
+
     private func tcxSport(_ activity: String) -> String {
         switch activity.lowercased() {
         case let value where value.contains("run"): "Running"
@@ -371,6 +421,7 @@ private final class FileExportTextWriter: ExportTextWriting {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             throw WorkoutExporterError.fileWriteFailure("Could not create \(url.lastPathComponent).")
         }
+        try ExportUtilities.applyCompleteFileProtection(to: url)
         handle = try FileHandle(forWritingTo: url)
         buffer.reserveCapacity(Self.bufferLimit)
     }

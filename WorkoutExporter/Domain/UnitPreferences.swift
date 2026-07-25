@@ -11,6 +11,18 @@ enum DistanceUnitPreference: String, CaseIterable, Codable, Sendable {
     var paceUnitLabel: String { self == .metric ? "km" : "mi" }
 }
 
+enum ExportFilenameFormat: String, CaseIterable, Codable, Sendable {
+    case dateActivityIdentifier
+    case activityDateIdentifier
+
+    var label: String {
+        switch self {
+        case .dateActivityIdentifier: "Date · Activity · ID"
+        case .activityDateIdentifier: "Activity · Date · ID"
+        }
+    }
+}
+
 struct MeasurementFormatterFactory {
     static func distance(_ meters: Double?, preference: DistanceUnitPreference) -> String {
         guard let meters else { return "—" }
