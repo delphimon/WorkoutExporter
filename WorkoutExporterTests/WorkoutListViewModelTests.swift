@@ -68,6 +68,30 @@ final class WorkoutListViewModelTests: XCTestCase {
         XCTAssertEqual(model.requestedLimit, 50)
         XCTAssertNotNil(model.paginationError)
     }
+
+    func testUnexportedFilterManualLocationSearchAndBulkSelection() async throws {
+        let fixtures = SyntheticWorkoutFactory.makeAll().map(\.summary)
+        let first = try XCTUnwrap(fixtures.first)
+        let second = try XCTUnwrap(fixtures.dropFirst().first)
+        let model = WorkoutListViewModel()
+        await model.load(using: ListClient(workouts: fixtures))
+        model.exportedWorkoutIDs = [first.id]
+        model.customLocationTags[second.id] = "Green Lake"
+
+        model.unexportedOnly = true
+        XCTAssertFalse(model.filteredWorkouts.contains { $0.id == first.id })
+        XCTAssertTrue(model.filteredWorkouts.contains { $0.id == second.id })
+
+        model.searchText = "Green Lake"
+        XCTAssertEqual(model.filteredWorkouts.map(\.id), [second.id])
+        model.selectAllFiltered()
+        XCTAssertEqual(model.selectedIDs, Set([second.id]))
+
+        model.clearSelection()
+        XCTAssertTrue(model.selectedIDs.isEmpty)
+        model.resetFilters()
+        XCTAssertFalse(model.unexportedOnly)
+    }
 }
 
 private actor ListClient: HealthKitClient {

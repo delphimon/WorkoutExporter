@@ -12,12 +12,12 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         self.zipWriter = zipWriter
     }
 
-    func buildPackage(
+    func buildPackageResult(
         for requests: [WorkoutExportRequest],
         options: ExportOptions,
         to directory: URL,
         progress: @escaping @Sendable (ExportProgress) async -> Void
-    ) async throws -> URL {
+    ) async throws -> ExportPackageResult {
         do {
             guard !requests.isEmpty else { throw WorkoutExporterError.noAccessibleData }
             let staging = directory.appending(path: "WorkoutExporter-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -117,7 +117,10 @@ actor ExportPackageBuilder: ExportPackageBuilding {
                 }
                 try zipWriter.write(files: files, to: destination)
                 await progress(update(.finalizing, index: requests.count - 1, total: requests.count))
-                return destination
+                return ExportPackageResult(
+                    url: destination,
+                    exportedWorkoutIDs: Set(completedWorkouts.map(\.id))
+                )
             }
 
             await progress(update(.finalizing, index: requests.count - 1, total: requests.count))
@@ -127,7 +130,10 @@ actor ExportPackageBuilder: ExportPackageBuilding {
             }
             try FileManager.default.copyItem(at: staging, to: destination)
             try ExportUtilities.applyCompleteFileProtectionRecursively(to: destination)
-            return destination
+            return ExportPackageResult(
+                url: destination,
+                exportedWorkoutIDs: Set(completedWorkouts.map(\.id))
+            )
         } catch is CancellationError {
             throw WorkoutExporterError.cancelled
         } catch let error as WorkoutExporterError {

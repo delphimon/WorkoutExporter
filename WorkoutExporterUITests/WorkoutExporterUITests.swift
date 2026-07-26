@@ -108,8 +108,87 @@ final class WorkoutExporterUITests: XCTestCase {
     }
 
     @MainActor
+    func testBatchExportHistoryFilterClearAndCachedShare() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Sample Workouts"].waitForExistence(timeout: 5))
+
+        let firstID = "00000000-0000-0000-0000-000000000001"
+        let secondID = "00000000-0000-0000-0000-000000000002"
+        app.buttons["Select"].tap()
+        let first = app.descendants(matching: .any)["workout-row-\(firstID)"]
+        let second = app.descendants(matching: .any)["workout-row-\(secondID)"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        first.tap()
+        second.tap()
+
+        app.buttons["export-selected-workouts-button"].tap()
+        XCTAssertTrue(app.navigationBars["Export"].waitForExistence(timeout: 5))
+        app.buttons["create-export-button"].tap()
+        scrollExportFormToBottom(in: app)
+        XCTAssertTrue(
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Share'"))
+                .firstMatch.waitForExistence(timeout: 30)
+        )
+        app.buttons["Close"].tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["workout-exported-\(firstID)"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["workout-exported-\(secondID)"].exists)
+        app.buttons["export-selected-workouts-button"].tap()
+        scrollExportFormToBottom(in: app)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["share-existing-export-button"]
+                .waitForExistence(timeout: 5)
+        )
+        app.buttons["Close"].tap()
+
+        app.buttons["workout-filter-button"].tap()
+        let unexported = app.switches["unexported-only-filter"]
+        XCTAssertTrue(unexported.waitForExistence(timeout: 5))
+        unexported.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)
+        ).tap()
+        XCTAssertEqual(unexported.value as? String, "1")
+        app.navigationBars["Filters"].buttons["Done"].tap()
+
+        app.buttons["selected-workout-actions-button"].tap()
+        app.buttons["Mark Selected Not Exported"].tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testManualLocationTagDoesNotRenameActivityType() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Sample Workouts"].waitForExistence(timeout: 5))
+
+        let workoutID = "00000000-0000-0000-0000-000000000001"
+        app.buttons["Select"].tap()
+        let workout = app.descendants(matching: .any)["workout-row-\(workoutID)"]
+        XCTAssertTrue(workout.waitForExistence(timeout: 5))
+        workout.tap()
+        app.buttons["selected-workout-actions-button"].tap()
+        app.buttons["Edit Location Tag"].tap()
+        let field = app.textFields["workout-location-tag-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("Green Lake")
+        app.buttons["save-workout-location-tag-button"].tap()
+        app.buttons["Done"].tap()
+
+        let activityType = app.staticTexts["workout-type-\(workoutID)"].firstMatch
+        XCTAssertTrue(activityType.waitForExistence(timeout: 5))
+        XCTAssertEqual(activityType.label, "Running")
+        XCTAssertTrue(workout.label.contains("Green Lake"))
+    }
+
+    @MainActor
     private func scrollExportFormToBottom(in app: XCUIApplication) {
-        let form = app.collectionViews.firstMatch
+        let form = app.collectionViews["export-form"]
         for _ in 0..<4 { form.swipeUp() }
     }
 }

@@ -151,10 +151,16 @@ final class ExportTests: XCTestCase {
         options.packageAsZIP = false
         options.formats = [.json]
 
-        let package = try await ExportPackageBuilder(
+        let result = try await ExportPackageBuilder(
             exporter: SelectiveFailingExporter(failedID: failed.id)
-        ).buildPackage(for: [first, failed], options: options, to: root)
+        ).buildPackageResult(
+            for: [first, failed].map(WorkoutExportRequest.loaded),
+            options: options,
+            to: root
+        )
+        let package = result.url
 
+        XCTAssertEqual(result.exportedWorkoutIDs, [first.id])
         XCTAssertTrue(FileManager.default.fileExists(atPath: package.appending(path: "export-warnings.txt").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: package.appending(path: "index.csv").path))
         let folders = try FileManager.default.contentsOfDirectory(
@@ -174,7 +180,7 @@ final class ExportTests: XCTestCase {
         options.packageAsZIP = false
         options.formats = [.json]
 
-        let package = try await ExportPackageBuilder().buildPackage(
+        let result = try await ExportPackageBuilder().buildPackageResult(
             for: [
                 .loaded(first),
                 WorkoutExportRequest(id: failedID) {
@@ -185,6 +191,8 @@ final class ExportTests: XCTestCase {
             to: root
         )
 
+        XCTAssertEqual(result.exportedWorkoutIDs, [first.id])
+        let package = result.url
         let warning = try String(
             contentsOf: package.appending(path: "export-warnings.txt"),
             encoding: .utf8

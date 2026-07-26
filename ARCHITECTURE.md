@@ -61,10 +61,23 @@ must have a non-generic name and be geographically close to the recorded route;
 otherwise the app shows no name. The UI labels every accepted result as an
 Apple Maps suggestion. These labels are presentation metadata only and never
 replace or enter the HealthKit workout record or exported canonical data.
+Users may replace that secondary suggestion with a local location tag. The
+activity type remains the normalized HealthKit activity type everywhere, and
+the tag never affects filenames or export payloads.
 
 ## Persistence and security
 
-Only user preferences persist. Complete exports are staged in the temporary directory, written to a partial archive before atomic publication, use complete file protection when written as ZIP, and are removed after 24 hours unless the user explicitly saves or shares them.
+User preferences, exported workout identifiers, manual location tags, and
+relative references to reusable temporary packages persist locally. This
+metadata uses complete file protection and is excluded from backup. Cached
+paths accept only direct, non-symbolic-link children of the managed export
+directory.
+
+Complete exports are staged in the temporary directory, written to a partial
+archive before atomic publication, use complete file protection, and are
+removed after 24 hours unless the user explicitly saves or shares them. An
+expired or missing file removes only its cached-package reference; exported
+status and a manual location tag remain independent.
 
 ## Future macOS companion
 

@@ -47,12 +47,14 @@ HealthKit cannot prove per-type read approval. “No accessible workouts” may 
 - Read-only Health authorization
 - Reverse-chronological workout browser with search, filters, refresh, and multi-selection
 - Lazy, cached Apple Maps route thumbnails and conservative nearby place-name suggestions
+- Editable location tags that override only the secondary Maps suggestion, never the activity type
 - SF Symbol activity icons beside workout type names
 - Detail summary, route map, heart-rate and elevation charts, pace, splits, and raw data
 - HealthKit workout values preserved unchanged, with supplemental derived values kept separate
 - JSON, five CSV tables, GPX 1.1, TCX, and ZIP packages
 - SHA-256 manifest, schema documentation, package README, safe filenames
 - Standard share sheet / Files handoff
+- Persistent exported-status badges, an unexported-only filter, and reusable temporary packages
 - Metric and US customary display units
 - Debug-only synthetic fixtures, including long workouts and partial failure cases
 
@@ -85,7 +87,7 @@ See [TESTING.md](TESTING.md) for real-device checks and simulator limitations.
 - `HealthKit/`: live adapters, centralized requested types, synthetic client
 - `Export/`: writers, package builder, manifest hashing, ZIP
 - `Features/`: authorization, list, detail, export, and settings UI
-- `Persistence/`: user settings
+- `Persistence/`: user settings, export history, cached-package references, and location tags
 - `WorkoutExporterTests/`: deterministic unit and integration coverage
 
 Related documentation: [architecture](ARCHITECTURE.md), [export format](EXPORT_FORMAT.md), [testing](TESTING.md), [known limitations](KNOWN_LIMITATIONS.md).

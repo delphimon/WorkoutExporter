@@ -43,9 +43,12 @@ final class WorkoutListViewModel {
     var sortOrder = SortOrder.newestFirst
     var routeOnly = false
     var heartRateOnly = false
+    var unexportedOnly = false
     var minimumDurationMinutes = 0.0
     var minimumDistanceMeters = 0.0
     var selectedIDs: Set<UUID> = []
+    var exportedWorkoutIDs: Set<UUID> = []
+    var customLocationTags: [UUID: String] = [:]
     var isSelecting = false
     private(set) var requestedLimit = 50
     private(set) var canLoadMore = true
@@ -65,15 +68,19 @@ final class WorkoutListViewModel {
             let matchesText = searchText.isEmpty
                 || workout.activityName.localizedCaseInsensitiveContains(searchText)
                 || workout.source.name.localizedCaseInsensitiveContains(searchText)
+                || customLocationTags[workout.id]?.localizedCaseInsensitiveContains(searchText) == true
             let matchesActivity = selectedActivity == "All" || workout.activityName == selectedActivity
             let matchesSource = selectedSource == "All" || workout.source.name == selectedSource
             let matchesDate = cutoff.map { workout.startDate >= $0 } ?? true
             let matchesRoute = !routeOnly || workout.hasRoute
             let matchesHeartRate = !heartRateOnly || workout.averageHeartRateBPM != nil
+            let matchesExportStatus = !unexportedOnly
+                || !exportedWorkoutIDs.contains(workout.id)
             let matchesDuration = workout.duration >= minimumDurationMinutes * 60
             let matchesDistance = (workout.totalDistanceMeters ?? 0) >= minimumDistanceMeters
             return matchesText && matchesActivity && matchesSource && matchesDate
-                && matchesRoute && matchesHeartRate && matchesDuration && matchesDistance
+                && matchesRoute && matchesHeartRate && matchesExportStatus
+                && matchesDuration && matchesDistance
         }
         return filtered.sorted {
             switch sortOrder {
@@ -120,11 +127,20 @@ final class WorkoutListViewModel {
         sortOrder = .newestFirst
         routeOnly = false
         heartRateOnly = false
+        unexportedOnly = false
         minimumDurationMinutes = 0
         minimumDistanceMeters = 0
     }
 
     func toggleSelection(_ id: UUID) {
         if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
+    }
+
+    func selectAllFiltered() {
+        selectedIDs.formUnion(filteredWorkouts.map(\.id))
+    }
+
+    func clearSelection() {
+        selectedIDs.removeAll()
     }
 }
