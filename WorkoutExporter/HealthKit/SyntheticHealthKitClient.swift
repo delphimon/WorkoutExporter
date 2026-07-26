@@ -32,6 +32,16 @@ actor SyntheticHealthKitClient: HealthKitClient {
 
     func requestReadAuthorization() async throws {}
 
+    func fetchDateOfBirthComponents() async throws -> DateComponents? {
+        DateComponents(
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 1986,
+            month: 1,
+            day: 1
+        )
+    }
+
     func fetchWorkouts(limit: Int) async throws -> [WorkoutSummary] {
         details.values
             .map(\.summary)

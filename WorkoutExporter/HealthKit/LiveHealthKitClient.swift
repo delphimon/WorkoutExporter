@@ -31,6 +31,13 @@ actor LiveHealthKitClient: HealthKitClient {
         // does not reveal whether read access was granted for each requested type.
     }
 
+    func fetchDateOfBirthComponents() async throws -> DateComponents? {
+        guard isHealthDataAvailable else {
+            throw WorkoutExporterError.healthKitUnavailable
+        }
+        return try healthStore.dateOfBirthComponents()
+    }
+
     func fetchWorkouts(limit: Int = 100) async throws -> [WorkoutSummary] {
         guard isHealthDataAvailable else { throw WorkoutExporterError.healthKitUnavailable }
         do {

@@ -36,6 +36,9 @@ enum HealthKitMappings {
         var types = Set(quantityTypes.map(\.type) as [HKObjectType])
         types.insert(HKObjectType.workoutType())
         types.insert(HKSeriesType.workoutRoute())
+        if let dateOfBirth = HKObjectType.characteristicType(forIdentifier: .dateOfBirth) {
+            types.insert(dateOfBirth)
+        }
         categoryTypes.forEach { types.insert($0) }
         return types
     }

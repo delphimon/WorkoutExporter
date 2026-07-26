@@ -51,6 +51,7 @@ HealthKit cannot prove per-type read approval. “No accessible workouts” may 
 - SF Symbol activity icons beside workout type names
 - Immediate native detail summary while route and sample queries load concurrently
 - Responsive synchronized route position and touch-scrubbable heart-rate, pace, and elevation charts; bounded display-only series retain original extrema while exports keep every source sample
+- Heart-rate zone detail with explicit formulas, inputs, BPM boundaries, and an optional age-based maximum-HR estimate from Health date of birth
 - Full date filters and grouped filtered totals for distance, duration, and native elevation gain
 - HealthKit workout values preserved unchanged, with supplemental derived values kept separate
 - JSON, five CSV tables, GPX 1.1, TCX, and ZIP packages

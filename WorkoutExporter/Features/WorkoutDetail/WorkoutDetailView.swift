@@ -72,7 +72,12 @@ struct WorkoutDetailView: View {
             WorkoutLocationTagEditor(workout: workout)
         }
         .task {
-            await model.load(id: workout.id, client: environment.healthClient, settings: settings.metricSettings)
+            await model.load(
+                id: workout.id,
+                referenceDate: workout.startDate,
+                client: environment.healthClient,
+                settings: settings.metricSettings
+            )
         }
     }
 
@@ -101,6 +106,7 @@ struct WorkoutDetailView: View {
                         detail: detail,
                         presentation: model.chartPresentation,
                         units: settings.distanceUnits,
+                        maximumHeartRateEstimate: model.maximumHeartRateEstimate,
                         selectedDate: $selectedDate
                     )
                 case .pace:
@@ -479,6 +485,7 @@ private struct HeartRateSection: View {
     let detail: WorkoutDetail
     let presentation: WorkoutChartPresentation?
     let units: DistanceUnitPreference
+    let maximumHeartRateEstimate: AgeBasedMaximumHeartRateEstimate?
     @Binding var selectedDate: Date?
 
     var body: some View {
@@ -554,15 +561,41 @@ private struct HeartRateSection: View {
             .padding(.horizontal)
 
             if let zones = detail.derived.heartRateZones {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Time in Heart-Rate Zones").font(.headline)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Heart-Rate Zones").font(.headline)
+                    zoneCalculationExplanation
+
                     ForEach(zones) { zone in
-                        LabeledContent(
-                            "Zone \(zone.zone)",
-                            value: MeasurementFormatterFactory.duration(zone.duration)
-                        )
+                        HStack(spacing: 8) {
+                            Text("Zone \(zone.zone)")
+                                .foregroundStyle(zoneColor(zone.zone))
+                                .lineLimit(1)
+                                .frame(width: 54, alignment: .leading)
+                            ProgressView(
+                                value: zone.duration,
+                                total: max(totalZoneDuration, 1)
+                            )
+                            .tint(zoneColor(zone.zone))
+                            .frame(maxWidth: .infinity)
+                            Text(
+                                MeasurementFormatterFactory.duration(
+                                    zone.duration
+                                )
+                            )
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            Text(zone.rangeDescription)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(width: 94, alignment: .trailing)
+                        }
                     }
-                    Text("Personal analysis only; not medical guidance.")
+                    Text(
+                        "Estimated time in each heart-rate zone. "
+                            + "Personal analysis only; not medical guidance."
+                    )
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -572,6 +605,105 @@ private struct HeartRateSection: View {
             ProgressView("Preparing chart…")
                 .frame(maxWidth: .infinity, minHeight: 400)
         }
+    }
+
+    @ViewBuilder
+    private var zoneCalculationExplanation: some View {
+        let settings = detail.metricSettings.heartRateZones
+        VStack(alignment: .leading, spacing: 5) {
+            switch settings.method {
+            case .manual:
+                Text("Method: Manual BPM boundaries")
+            case .percentMaximum:
+                Text("Method: Percentage of maximum heart rate")
+                Text(
+                    "Boundaries: 60%, 70%, 80%, and 90% of maximum HR, "
+                        + "rounded to whole BPM."
+                )
+                    .foregroundStyle(.secondary)
+            case .heartRateReserve:
+                Text("Method: Heart-rate reserve")
+                Text(
+                    "Boundary = resting HR + percentage × "
+                        + "(maximum HR − resting HR), using 60%, 70%, 80%, "
+                        + "and 90%, rounded to whole BPM."
+                )
+                .foregroundStyle(.secondary)
+            }
+
+            if settings.method != .manual {
+                LabeledContent(
+                    maximumHeartRateEstimate == nil
+                        ? "Maximum HR"
+                        : "Estimated maximum HR",
+                    value: "\(Int(settings.maximumHeartRateBPM.rounded())) bpm"
+                )
+                if let estimate = maximumHeartRateEstimate {
+                    if estimate.maximumHeartRateBPM.rounded()
+                        == estimate.maximumHeartRateBPM {
+                        Text(
+                            "Age \(estimate.ageYears) on the workout date: "
+                                + "208 − (0.7 × \(estimate.ageYears)) = "
+                                + "\(formattedBPM(estimate.maximumHeartRateBPM)) bpm."
+                        )
+                        .foregroundStyle(.secondary)
+                    } else {
+                        Text(
+                            "Age \(estimate.ageYears) on the workout date: "
+                                + "208 − (0.7 × \(estimate.ageYears)) = "
+                                + "\(formattedBPM(estimate.maximumHeartRateBPM)) bpm, "
+                                + "rounded to \(Int(estimate.maximumHeartRateBPM.rounded())) bpm."
+                        )
+                        .foregroundStyle(.secondary)
+                    }
+                } else if settings.automaticallyEstimateMaximumHeartRate {
+                    Text(
+                        "Health date of birth was unavailable, so the configured "
+                            + "maximum-HR fallback was used."
+                    )
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text("Using the maximum HR configured in Settings.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if settings.method == .heartRateReserve {
+                let reserve = max(
+                    0,
+                    settings.maximumHeartRateBPM - settings.restingHeartRateBPM
+                )
+                LabeledContent(
+                    "Resting HR",
+                    value: "\(Int(settings.restingHeartRateBPM.rounded())) bpm"
+                )
+                LabeledContent(
+                    "Heart-rate reserve",
+                    value: "\(formattedBPM(reserve)) bpm"
+                )
+            }
+        }
+        .font(.subheadline)
+    }
+
+    private var totalZoneDuration: TimeInterval {
+        detail.derived.heartRateZones?.reduce(0) { $0 + $1.duration } ?? 0
+    }
+
+    private func zoneColor(_ zone: Int) -> Color {
+        switch zone {
+        case 1: .blue
+        case 2: .cyan
+        case 3: .green
+        case 4: .orange
+        default: .pink
+        }
+    }
+
+    private func formattedBPM(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(
+            value.rounded() == value ? 0 : 1
+        )))
     }
 }
 

@@ -59,9 +59,9 @@ final class WorkoutExporterUITests: XCTestCase {
                 "Touch and slide across the chart to inspect a time and map position."
             ].exists
         )
-        let heartRateChart = app.descendants(matching: .any)[
-            "heart-rate-chart"
-        ]
+        let heartRateChart = app.descendants(matching: .any)
+            .matching(identifier: "heart-rate-chart")
+            .firstMatch
         XCTAssertTrue(heartRateChart.waitForExistence(timeout: 5))
         let chartFrameBeforeScrub = heartRateChart.frame
         heartRateChart.coordinate(
@@ -82,6 +82,19 @@ final class WorkoutExporterUITests: XCTestCase {
             chartFrameBeforeScrub.height,
             accuracy: 1
         )
+        app.swipeUp()
+        XCTAssertTrue(
+            app.staticTexts["Heart-Rate Zones"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.staticTexts["Method: Percentage of maximum heart rate"].exists
+        )
+        XCTAssertTrue(
+            app.staticTexts[
+                "Age 40 on the workout date: 208 − (0.7 × 40) = 180 bpm."
+            ].exists
+        )
+        XCTAssertTrue(app.staticTexts["< 108 bpm"].exists)
 
         app.buttons["workout-export-button"].tap()
         XCTAssertTrue(app.navigationBars["Export"].waitForExistence(timeout: 3))
