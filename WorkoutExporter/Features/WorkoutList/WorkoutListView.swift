@@ -121,39 +121,161 @@ struct WorkoutListView: View {
 private struct WorkoutRow: View {
     let workout: WorkoutSummary
     let units: DistanceUnitPreference
+    @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(workout.activityName).font(.headline)
-                Spacer()
-                if workout.hasRoute {
-                    Image(systemName: "map.fill").accessibilityLabel("GPS route available")
-                }
-                if workout.hasDetailedSamples {
-                    Image(systemName: "waveform.path.ecg").accessibilityLabel("Detailed samples available")
-                }
+        HStack(alignment: .top, spacing: 12) {
+            if workout.hasRoute {
+                routeThumbnail
             }
-            Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(
+                        workout.activityName,
+                        systemImage: WorkoutActivityPresentation.symbolName(
+                            for: workout.activityName
+                        )
+                    )
+                    .font(.headline)
+                    .accessibilityIdentifier("workout-type-\(workout.id.uuidString)")
+                    Spacer()
+                    if workout.hasDetailedSamples {
+                        Image(systemName: "waveform.path.ecg")
+                            .accessibilityLabel("Detailed samples available")
+                    }
+                }
+                if let placeLabel {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(placeLabel.name)
+                            .font(.subheadline.weight(.semibold))
+                        Text(placeDescription(placeLabel))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("workout-place-\(workout.id.uuidString)")
+                }
+                Text(workout.startDate.formatted(date: .abbreviated, time: .shortened))
+                    .foregroundStyle(.secondary)
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), alignment: .leading),
+                        GridItem(.flexible(), alignment: .leading)
+                    ],
+                    alignment: .leading,
+                    spacing: 6
+                ) {
+                    ForEach(rowMetrics, id: \.icon) { metric in
+                        Label(metric.value, systemImage: metric.icon)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                .font(.caption)
                 .foregroundStyle(.secondary)
-            HStack(spacing: 16) {
-                Label(MeasurementFormatterFactory.duration(workout.duration), systemImage: "clock")
-                Label(MeasurementFormatterFactory.distance(workout.totalDistanceMeters, preference: units), systemImage: "arrow.left.and.right")
-                if let heartRate = workout.averageHeartRateBPM {
-                    Label("\(Int(heartRate.rounded())) bpm", systemImage: "heart.fill")
-                }
-                if let energy = workout.activeEnergyKilocalories {
-                    Label("\(Int(energy.rounded())) kcal", systemImage: "flame")
-                }
+                Text(workout.source.name)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            Text(workout.source.name)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+        .task(id: workout.id) {
+            environment.routePresentationStore.enqueue(
+                workout: workout,
+                client: environment.healthClient
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var routeThumbnail: some View {
+        Group {
+            switch environment.routePresentationStore.state(for: workout.id) {
+            case .loaded(let presentation):
+                if let image = presentation.thumbnail {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    mapPlaceholder(showProgress: false)
+                }
+            case .loading:
+                mapPlaceholder(showProgress: true)
+            case .unavailable, nil:
+                mapPlaceholder(showProgress: false)
+            }
+        }
+        .frame(width: 76, height: 64)
+        .clipShape(.rect(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(.quaternary, lineWidth: 1)
+        }
+        .accessibilityLabel("Workout route map preview")
+        .accessibilityIdentifier("workout-map-thumbnail-\(workout.id.uuidString)")
+    }
+
+    private func mapPlaceholder(showProgress: Bool) -> some View {
+        ZStack {
+            Color.secondary.opacity(0.12)
+            if showProgress {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: "map")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var placeLabel: WorkoutPlaceLabel? {
+        guard case .loaded(let presentation) =
+                environment.routePresentationStore.state(for: workout.id) else {
+            return nil
+        }
+        return presentation.placeLabel
+    }
+
+    private func placeDescription(_ label: WorkoutPlaceLabel) -> String {
+        switch label.kind {
+        case .hike: "Suggested hike name · \(label.source)"
+        case .neighborhood: "Neighborhood · \(label.source)"
+        }
+    }
+
+    private var rowMetrics: [RowMetric] {
+        var values = [
+            RowMetric(
+                icon: "clock",
+                value: MeasurementFormatterFactory.duration(workout.duration)
+            ),
+            RowMetric(
+                icon: "arrow.left.and.right",
+                value: MeasurementFormatterFactory.distance(
+                    workout.totalDistanceMeters,
+                    preference: units
+                )
+            )
+        ]
+        if let heartRate = workout.averageHeartRateBPM {
+            values.append(RowMetric(
+                icon: "heart.fill",
+                value: "\(Int(heartRate.rounded())) bpm"
+            ))
+        }
+        if let energy = workout.activeEnergyKilocalories {
+            values.append(RowMetric(
+                icon: "flame",
+                value: "\(Int(energy.rounded())) kcal"
+            ))
+        }
+        return values
+    }
+
+    private struct RowMetric {
+        var icon: String
+        var value: String
     }
 }
 

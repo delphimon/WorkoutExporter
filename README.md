@@ -46,6 +46,8 @@ HealthKit cannot prove per-type read approval. “No accessible workouts” may 
 
 - Read-only Health authorization
 - Reverse-chronological workout browser with search, filters, refresh, and multi-selection
+- Lazy, cached Apple Maps route thumbnails and conservative nearby place-name suggestions
+- SF Symbol activity icons beside workout type names
 - Detail summary, route map, heart-rate and elevation charts, pace, splits, and raw data
 - HealthKit workout values preserved unchanged, with supplemental derived values kept separate
 - JSON, five CSV tables, GPX 1.1, TCX, and ZIP packages
@@ -56,7 +58,11 @@ HealthKit cannot prove per-type read approval. “No accessible workouts” may 
 
 ## Privacy
 
-There are no accounts, analytics, ads, remote APIs, automatic uploads, or background transmission. Temporary exports older than 24 hours are removed at launch. See [PRIVACY.md](PRIVACY.md).
+There are no accounts, analytics, ads, developer-operated remote APIs,
+automatic uploads, or background transmission. Apple Maps processes route
+coordinates when providing map imagery and nearby place-name suggestions.
+Temporary exports older than 24 hours are removed at launch. See
+[PRIVACY.md](PRIVACY.md).
 
 ## Tests
 

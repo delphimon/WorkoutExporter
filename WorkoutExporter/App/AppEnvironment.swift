@@ -7,6 +7,7 @@ final class AppEnvironment {
     var healthClient: any HealthKitClient
     let settings: UserSettings
     var packageBuilder: any ExportPackageBuilding
+    let routePresentationStore = WorkoutRoutePresentationStore()
     var isUsingSyntheticData = false
 
     init() {
@@ -34,11 +35,13 @@ final class AppEnvironment {
 
     #if DEBUG
     func useSyntheticData() {
+        routePresentationStore.reset()
         healthClient = SyntheticHealthKitClient()
         isUsingSyntheticData = true
     }
 
     func useLiveData() {
+        routePresentationStore.reset()
         healthClient = LiveHealthKitClient()
         isUsingSyntheticData = false
     }

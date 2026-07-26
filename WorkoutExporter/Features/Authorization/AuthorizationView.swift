@@ -36,6 +36,11 @@ struct AuthorizationView: View {
                     title: "Read only",
                     detail: "The app does not write workouts or samples to Health."
                 )
+                PrivacyPoint(
+                    icon: "map",
+                    title: "Apple Maps context",
+                    detail: "Route thumbnails and place-name suggestions use Apple Maps. Nothing is sent to the developer."
+                )
 
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
