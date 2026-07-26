@@ -22,6 +22,7 @@ final class WorkoutRoutePresentationStore {
     private var activeTasks: [UUID: Task<Void, Never>] = [:]
     private let renderer: any WorkoutRouteThumbnailRendering
     private let placeResolver: any WorkoutPlaceResolving
+    private let thumbnailCache: (any WorkoutRouteThumbnailCaching)?
     private let maximumConcurrentLoads: Int
     private let maximumCachedPresentations: Int
     private var completedOrder: [UUID] = []
@@ -29,11 +30,13 @@ final class WorkoutRoutePresentationStore {
     init(
         renderer: any WorkoutRouteThumbnailRendering = AppleMapThumbnailRenderer(),
         placeResolver: any WorkoutPlaceResolving = AppleMapsWorkoutPlaceResolver(),
+        thumbnailCache: (any WorkoutRouteThumbnailCaching)? = WorkoutRouteThumbnailCache(),
         maximumConcurrentLoads: Int = 2,
         maximumCachedPresentations: Int = 120
     ) {
         self.renderer = renderer
         self.placeResolver = placeResolver
+        self.thumbnailCache = thumbnailCache
         self.maximumConcurrentLoads = max(1, maximumConcurrentLoads)
         self.maximumCachedPresentations = max(1, maximumCachedPresentations)
     }
@@ -50,7 +53,9 @@ final class WorkoutRoutePresentationStore {
     }
 
     func reset() {
-        activeTasks.values.forEach { $0.cancel() }
+        for task in activeTasks.values {
+            task.cancel()
+        }
         activeTasks.removeAll()
         pending.removeAll()
         states.removeAll()
@@ -71,6 +76,14 @@ final class WorkoutRoutePresentationStore {
     }
 
     private func makePresentation(for request: Request) async -> WorkoutRoutePresentation? {
+        if let cached = await thumbnailCache?.presentation(
+            for: request.workout.id
+        ) {
+            return WorkoutRoutePresentation(
+                thumbnail: cached.imageData.flatMap(UIImage.init(data:)),
+                placeLabel: cached.placeLabel
+            )
+        }
         do {
             guard let preview = try await request.client.fetchWorkoutRoutePreview(
                 id: request.workout.id
@@ -82,10 +95,19 @@ final class WorkoutRoutePresentationStore {
                 workout: request.workout,
                 preview: preview
             )
-            return WorkoutRoutePresentation(
+            let presentation = WorkoutRoutePresentation(
                 thumbnail: thumbnail,
                 placeLabel: placeLabel
             )
+            await thumbnailCache?.store(
+                CachedRoutePresentation(
+                    imageData: thumbnail?.pngData(),
+                    placeLabel: placeLabel,
+                    createdAt: Date()
+                ),
+                for: request.workout.id
+            )
+            return presentation
         } catch {
             return nil
         }

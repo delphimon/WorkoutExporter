@@ -14,12 +14,12 @@ struct WorkoutRoutePreview: Hashable, Sendable {
     }
 }
 
-enum WorkoutPlaceKind: String, Sendable {
+enum WorkoutPlaceKind: String, Codable, Sendable {
     case hike
     case neighborhood
 }
 
-struct WorkoutPlaceLabel: Equatable, Sendable {
+struct WorkoutPlaceLabel: Codable, Equatable, Sendable {
     var name: String
     var kind: WorkoutPlaceKind
     var source: String

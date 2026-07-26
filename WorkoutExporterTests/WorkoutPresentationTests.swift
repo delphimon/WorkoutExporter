@@ -125,6 +125,7 @@ final class WorkoutPresentationTests: XCTestCase {
         let store = WorkoutRoutePresentationStore(
             renderer: StubRenderer(),
             placeResolver: StubPlaceResolver(),
+            thumbnailCache: nil,
             maximumConcurrentLoads: 1
         )
 
@@ -148,6 +149,72 @@ final class WorkoutPresentationTests: XCTestCase {
         await Task.yield()
         let cachedRequestCount = await client.requestCount()
         XCTAssertEqual(cachedRequestCount, 1)
+    }
+
+    func testRouteThumbnailCachePersistsPresentationAcrossStores() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(
+            path: UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let detail = SyntheticWorkoutFactory.make(.hikeWithStops, index: 7)
+        let preview = WorkoutRoutePreview(
+            workoutID: detail.id,
+            segments: detail.routes.values.map {
+                $0.map {
+                    WorkoutRouteCoordinate(
+                        latitude: $0.latitude,
+                        longitude: $0.longitude
+                    )
+                }
+            }
+        )
+        let cache = WorkoutRouteThumbnailCache(directory: directory)
+        let firstClient = PreviewClient(summary: detail.summary, preview: preview)
+        let firstStore = WorkoutRoutePresentationStore(
+            renderer: StubRenderer(),
+            placeResolver: StubPlaceResolver(),
+            thumbnailCache: cache,
+            maximumConcurrentLoads: 1
+        )
+        firstStore.enqueue(workout: detail.summary, client: firstClient)
+        for _ in 0..<100 {
+            if case .loaded = firstStore.state(for: detail.id) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .loaded = firstStore.state(for: detail.id) else {
+            return XCTFail("Expected the first presentation to finish caching")
+        }
+        let firstRequestCount = await firstClient.requestCount()
+        XCTAssertEqual(firstRequestCount, 1)
+        let cachedPresentation = await cache.presentation(for: detail.id)
+        if cachedPresentation == nil {
+            let cacheError = await cache.lastError
+            XCTFail(
+                "Expected persisted cache entry: "
+                    + (cacheError ?? "unknown cache error")
+            )
+        }
+
+        let secondClient = PreviewClient(summary: detail.summary, preview: preview)
+        let secondStore = WorkoutRoutePresentationStore(
+            renderer: StubRenderer(),
+            placeResolver: StubPlaceResolver(),
+            thumbnailCache: cache,
+            maximumConcurrentLoads: 1
+        )
+        secondStore.enqueue(workout: detail.summary, client: secondClient)
+        for _ in 0..<100 {
+            if case .loaded = secondStore.state(for: detail.id) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        guard case .loaded(let presentation) = secondStore.state(for: detail.id) else {
+            return XCTFail("Expected the persisted presentation to load")
+        }
+        XCTAssertEqual(presentation.placeLabel?.name, "Synthetic Trail")
+        let secondRequestCount = await secondClient.requestCount()
+        XCTAssertEqual(secondRequestCount, 0)
     }
 
     func testSyntheticRoutePreviewPreservesEveryCoordinateInSourceOrder() async throws {

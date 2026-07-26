@@ -19,19 +19,41 @@ struct SettingsView: View {
                     VStack(alignment: .leading) {
                         Text("Moving threshold: \(MeasurementFormatterFactory.speed(settings.metricSettings.movingSpeedThresholdMetersPerSecond, preference: settings.distanceUnits))")
                         Slider(value: $settings.metricSettings.movingSpeedThresholdMetersPerSecond, in: 0.2...3, step: 0.05)
+                        Text("Route segments at or above this speed count as moving.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading) {
                         Text("Minimum moving interval: \(Int(settings.metricSettings.minimumMovingDuration)) seconds")
                         Slider(value: $settings.metricSettings.minimumMovingDuration, in: 1...30, step: 1)
+                        Text("A moving burst shorter than this is excluded from speed-threshold moving time.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading) {
                         Text("Stopped interval: \(Int(settings.metricSettings.minimumStoppedDuration)) seconds")
                         Slider(value: $settings.metricSettings.minimumStoppedDuration, in: 1...30, step: 1)
+                        Text("A below-threshold interval shorter than this remains part of moving time; a longer interval counts as stopped.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading) {
                         Text("Route gap: \(Int(settings.metricSettings.maximumRouteGap)) seconds")
                         Slider(value: $settings.metricSettings.maximumRouteGap, in: 5...120, step: 5)
+                        Text("Points farther apart in time are not connected for route-derived distance, speed, elevation, or splits.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
+                    Text(
+                        "These controls affect supplemental derived values shown in the app "
+                            + "(especially speed-threshold moving pace and splits) and the derived "
+                            + "sections of exports. The Summary screen's Moving Time uses recorded "
+                            + "pause/resume events, so these thresholds do not change that card. "
+                            + "They never alter HealthKit workout totals, recorded samples, route "
+                            + "points, or recorded elevation gain."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
                 Section("Splits") {
                     Picker("Split type", selection: $settings.metricSettings.splitMode) {
@@ -41,15 +63,15 @@ struct SettingsView: View {
                     if settings.metricSettings.splitMode == .distance {
                         VStack(alignment: .leading) {
                             Text(
-                                "Length: " + MeasurementFormatterFactory.distance(
+                                "Length: " + MeasurementFormatterFactory.distanceSliderValue(
                                     settings.metricSettings.splitDistanceMeters,
                                     preference: settings.distanceUnits
                                 )
                             )
                             Slider(
-                                value: $settings.metricSettings.splitDistanceMeters,
-                                in: 400...5_000,
-                                step: 100
+                                value: splitDistanceBinding,
+                                in: splitDistanceRange,
+                                step: settings.distanceUnits.distanceSliderStep
                             )
                         }
                     } else {
@@ -143,6 +165,24 @@ struct SettingsView: View {
             .sheet(isPresented: $showPrivacy) { PrivacyView() }
             .onDisappear { settings.persist() }
         }
+    }
+
+    private var splitDistanceBinding: Binding<Double> {
+        Binding(
+            get: {
+                settings.distanceUnits.distanceValue(
+                    fromMeters: settings.metricSettings.splitDistanceMeters
+                )
+            },
+            set: {
+                settings.metricSettings.splitDistanceMeters =
+                    settings.distanceUnits.meters(fromDistanceValue: $0)
+            }
+        )
+    }
+
+    private var splitDistanceRange: ClosedRange<Double> {
+        settings.distanceUnits == .metric ? 0.4...5.0 : 0.2...3.1
     }
 }
 

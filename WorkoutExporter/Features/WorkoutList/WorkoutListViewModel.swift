@@ -14,17 +14,11 @@ final class WorkoutListViewModel {
     enum DateRange: String, CaseIterable {
         case all = "All dates"
         case sevenDays = "Last 7 days"
+        case thisMonth = "This month"
         case thirtyDays = "Last 30 days"
-        case oneYear = "Last year"
-
-        var interval: TimeInterval? {
-            switch self {
-            case .all: nil
-            case .sevenDays: 7 * 86_400
-            case .thirtyDays: 30 * 86_400
-            case .oneYear: 365 * 86_400
-            }
-        }
+        case ninetyDays = "Last 90 days"
+        case twelveMonths = "Last 12 months"
+        case custom = "Custom dates"
     }
 
     enum LoadState: Equatable {
@@ -40,6 +34,12 @@ final class WorkoutListViewModel {
     var selectedActivity = "All"
     var selectedSource = "All"
     var dateRange = DateRange.all
+    var customStartDate = Calendar.current.date(
+        byAdding: .month,
+        value: -1,
+        to: Date()
+    ) ?? Date()
+    var customEndDate = Date()
     var sortOrder = SortOrder.newestFirst
     var routeOnly = false
     var heartRateOnly = false
@@ -52,6 +52,8 @@ final class WorkoutListViewModel {
     var isSelecting = false
     private(set) var requestedLimit = 50
     private(set) var canLoadMore = true
+    private(set) var isLoadingMore = false
+    private(set) var isLoadingAll = false
     private(set) var paginationError: String?
 
     var activityOptions: [String] {
@@ -63,7 +65,14 @@ final class WorkoutListViewModel {
     }
 
     var filteredWorkouts: [WorkoutSummary] {
-        let cutoff = dateRange.interval.map { Date().addingTimeInterval(-$0) }
+        filteredWorkouts(referenceDate: Date(), calendar: .current)
+    }
+
+    func filteredWorkouts(
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> [WorkoutSummary] {
+        let interval = dateInterval(referenceDate: referenceDate, calendar: calendar)
         let filtered = workouts.filter { workout in
             let matchesText = searchText.isEmpty
                 || workout.activityName.localizedCaseInsensitiveContains(searchText)
@@ -71,7 +80,7 @@ final class WorkoutListViewModel {
                 || customLocationTags[workout.id]?.localizedCaseInsensitiveContains(searchText) == true
             let matchesActivity = selectedActivity == "All" || workout.activityName == selectedActivity
             let matchesSource = selectedSource == "All" || workout.source.name == selectedSource
-            let matchesDate = cutoff.map { workout.startDate >= $0 } ?? true
+            let matchesDate = interval.map { $0.contains(workout.startDate) } ?? true
             let matchesRoute = !routeOnly || workout.hasRoute
             let matchesHeartRate = !heartRateOnly || workout.averageHeartRateBPM != nil
             let matchesExportStatus = !unexportedOnly
@@ -92,6 +101,47 @@ final class WorkoutListViewModel {
         }
     }
 
+    func dateInterval(
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> DateInterval? {
+        let endOfToday = calendar.date(
+            byAdding: .day,
+            value: 1,
+            to: calendar.startOfDay(for: referenceDate)
+        ) ?? referenceDate
+        let start: Date?
+        switch dateRange {
+        case .all:
+            return nil
+        case .sevenDays:
+            start = calendar.date(byAdding: .day, value: -7, to: referenceDate)
+        case .thisMonth:
+            start = calendar.date(
+                from: calendar.dateComponents([.year, .month], from: referenceDate)
+            )
+        case .thirtyDays:
+            start = calendar.date(byAdding: .day, value: -30, to: referenceDate)
+        case .ninetyDays:
+            start = calendar.date(byAdding: .day, value: -90, to: referenceDate)
+        case .twelveMonths:
+            start = calendar.date(byAdding: .month, value: -12, to: referenceDate)
+        case .custom:
+            let lower = min(customStartDate, customEndDate)
+            let upper = max(customStartDate, customEndDate)
+            let inclusiveEnd = calendar.date(
+                byAdding: .day,
+                value: 1,
+                to: calendar.startOfDay(for: upper)
+            ) ?? upper
+            return DateInterval(
+                start: calendar.startOfDay(for: lower),
+                end: inclusiveEnd
+            )
+        }
+        return start.map { DateInterval(start: $0, end: endOfToday) }
+    }
+
     func load(using client: any HealthKitClient, resetLimit: Bool = true) async {
         if resetLimit { requestedLimit = 50 }
         paginationError = nil
@@ -107,16 +157,42 @@ final class WorkoutListViewModel {
     }
 
     func loadMore(using client: any HealthKitClient) async {
-        guard canLoadMore, state == .loaded else { return }
-        let nextLimit = requestedLimit + 50
+        guard canLoadMore, state == .loaded, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        let priorMatchCount = filteredWorkouts.count
         paginationError = nil
-        do {
-            let loaded = try await client.fetchWorkouts(limit: nextLimit)
-            workouts = loaded
-            requestedLimit = nextLimit
-            canLoadMore = loaded.count == nextLimit
-        } catch {
-            paginationError = error.localizedDescription
+        while canLoadMore, filteredWorkouts.count == priorMatchCount {
+            let nextLimit = requestedLimit + 50
+            do {
+                let loaded = try await client.fetchWorkouts(limit: nextLimit)
+                workouts = loaded
+                requestedLimit = nextLimit
+                canLoadMore = loaded.count == nextLimit
+            } catch {
+                paginationError = error.localizedDescription
+                return
+            }
+        }
+    }
+
+    func loadAll(using client: any HealthKitClient) async {
+        guard canLoadMore, state == .loaded, !isLoadingAll else { return }
+        isLoadingAll = true
+        defer { isLoadingAll = false }
+        paginationError = nil
+        while canLoadMore {
+            let nextLimit = requestedLimit + 200
+            do {
+                let loaded = try await client.fetchWorkouts(limit: nextLimit)
+                workouts = loaded
+                requestedLimit = nextLimit
+                canLoadMore = loaded.count == nextLimit
+            } catch {
+                paginationError = error.localizedDescription
+                return
+            }
+            await Task.yield()
         }
     }
 

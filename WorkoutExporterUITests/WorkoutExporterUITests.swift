@@ -39,6 +39,17 @@ final class WorkoutExporterUITests: XCTestCase {
         firstWorkout.tap()
         XCTAssertTrue(app.buttons["workout-export-button"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["detail-section-picker"].exists)
+        XCTAssertTrue(
+            app.buttons["edit-detail-location-tag-button"]
+                .waitForExistence(timeout: 5)
+        )
+        app.buttons["detail-section-picker"].tap()
+        app.buttons["Heart Rate"].tap()
+        XCTAssertTrue(
+            app.maps["synchronized-route-map"].waitForExistence(timeout: 5)
+                || app.otherElements["synchronized-route-map"]
+                    .waitForExistence(timeout: 5)
+        )
 
         app.buttons["workout-export-button"].tap()
         XCTAssertTrue(app.navigationBars["Export"].waitForExistence(timeout: 3))
@@ -46,7 +57,6 @@ final class WorkoutExporterUITests: XCTestCase {
         XCTAssertTrue(app.switches["GPS route"].exists)
         XCTAssertTrue(app.buttons["create-export-button"].isEnabled)
         app.buttons["create-export-button"].tap()
-        scrollExportFormToBottom(in: app)
         XCTAssertTrue(
             app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Share'"))
                 .firstMatch.waitForExistence(timeout: 30)
@@ -64,6 +74,7 @@ final class WorkoutExporterUITests: XCTestCase {
             "workout-row-00000000-0000-0000-0000-000000000004"
         ]
         XCTAssertTrue(noRoute.waitForExistence(timeout: 5))
+        XCTAssertTrue(noRoute.label.contains("Workout route map preview"))
         noRoute.tap()
         XCTAssertTrue(app.buttons["detail-section-picker"].waitForExistence(timeout: 10))
         app.buttons["detail-section-picker"].tap()
@@ -127,7 +138,6 @@ final class WorkoutExporterUITests: XCTestCase {
         app.buttons["export-selected-workouts-button"].tap()
         XCTAssertTrue(app.navigationBars["Export"].waitForExistence(timeout: 5))
         app.buttons["create-export-button"].tap()
-        scrollExportFormToBottom(in: app)
         XCTAssertTrue(
             app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Share'"))
                 .firstMatch.waitForExistence(timeout: 30)
@@ -137,7 +147,6 @@ final class WorkoutExporterUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["workout-exported-\(firstID)"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["workout-exported-\(secondID)"].exists)
         app.buttons["export-selected-workouts-button"].tap()
-        scrollExportFormToBottom(in: app)
         XCTAssertTrue(
             app.descendants(matching: .any)["share-existing-export-button"]
                 .waitForExistence(timeout: 5)

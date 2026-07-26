@@ -11,6 +11,7 @@ final class WorkoutDetailViewModel {
     }
 
     var state: State = .loading
+    var chartPresentation: WorkoutChartPresentation?
 
     func load(
         id: UUID,
@@ -18,8 +19,21 @@ final class WorkoutDetailViewModel {
         settings: MetricCalculationSettings
     ) async {
         state = .loading
+        chartPresentation = nil
         do {
-            state = .loaded(try await client.fetchWorkoutDetail(id: id, settings: settings))
+            let detail = try await client.fetchWorkoutDetail(
+                id: id,
+                settings: settings
+            )
+            state = .loaded(detail)
+            let presentation = await Task.detached(priority: .userInitiated) {
+                WorkoutChartPresentation(detail: detail)
+            }.value
+            guard case .loaded(let currentDetail) = state,
+                  currentDetail.id == detail.id else {
+                return
+            }
+            chartPresentation = presentation
         } catch {
             state = .failed(error.localizedDescription)
         }

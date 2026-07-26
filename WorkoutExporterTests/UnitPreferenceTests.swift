@@ -22,6 +22,28 @@ final class UnitPreferenceTests: XCTestCase {
         XCTAssertTrue(MeasurementFormatterFactory.speed(1, preference: .usCustomary).contains("mph"))
     }
 
+    func testDistanceSliderConversionsUseRoundStepsInSelectedScheme() {
+        XCTAssertEqual(
+            DistanceUnitPreference.metric.meters(fromDistanceValue: 1),
+            1_000,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            DistanceUnitPreference.usCustomary.meters(fromDistanceValue: 1),
+            1_609.344,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            DistanceUnitPreference.usCustomary.distanceValue(
+                fromMeters: 1_609.344
+            ),
+            1,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(DistanceUnitPreference.metric.distanceSliderStep, 0.1)
+        XCTAssertEqual(DistanceUnitPreference.usCustomary.distanceSliderStep, 0.1)
+    }
+
     func testExportOptionsAndFilenamePreferencesRoundTrip() throws {
         var options = ExportOptions()
         options.filenameFormat = .activityDateIdentifier

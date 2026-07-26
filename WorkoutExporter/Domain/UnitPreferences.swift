@@ -9,6 +9,20 @@ enum DistanceUnitPreference: String, CaseIterable, Codable, Sendable {
     var elevationUnit: UnitLength { self == .metric ? .meters : .feet }
     var speedUnit: UnitSpeed { self == .metric ? .kilometersPerHour : .milesPerHour }
     var paceUnitLabel: String { self == .metric ? "km" : "mi" }
+
+    func distanceValue(fromMeters meters: Double) -> Double {
+        Measurement(value: meters, unit: UnitLength.meters)
+            .converted(to: distanceUnit)
+            .value
+    }
+
+    func meters(fromDistanceValue value: Double) -> Double {
+        Measurement(value: value, unit: distanceUnit)
+            .converted(to: .meters)
+            .value
+    }
+
+    var distanceSliderStep: Double { 0.1 }
 }
 
 enum ExportFilenameFormat: String, CaseIterable, Codable, Sendable {
@@ -24,6 +38,16 @@ enum ExportFilenameFormat: String, CaseIterable, Codable, Sendable {
 }
 
 struct MeasurementFormatterFactory {
+    static func distanceSliderValue(
+        _ meters: Double,
+        preference: DistanceUnitPreference
+    ) -> String {
+        let value = preference.distanceValue(fromMeters: meters)
+        return value.formatted(.number.precision(.fractionLength(1)))
+            + " "
+            + (preference == .metric ? "km" : "mi")
+    }
+
     static func distance(_ meters: Double?, preference: DistanceUnitPreference) -> String {
         guard let meters else { return "—" }
         let measurement = Measurement(value: meters, unit: UnitLength.meters)
