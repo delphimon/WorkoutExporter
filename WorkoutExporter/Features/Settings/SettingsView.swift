@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @State private var showPrivacy = false
+    @State private var isRequestingHealthAccess = false
+    @State private var healthAccessMessage: String?
 
     var body: some View {
         @Bindable var settings = settings
@@ -90,11 +92,31 @@ struct SettingsView: View {
                         Text("% heart-rate reserve").tag(HeartRateZoneMethod.heartRateReserve)
                     }
                     if settings.metricSettings.heartRateZones.method != .manual {
+                        Toggle(
+                            "Estimate maximum HR from Health age",
+                            isOn: $settings.metricSettings.heartRateZones
+                                .automaticallyEstimateMaximumHeartRate
+                        )
                         Stepper(
-                            "Maximum: \(Int(settings.metricSettings.heartRateZones.maximumHeartRateBPM)) bpm",
+                            (
+                                settings.metricSettings.heartRateZones
+                                    .automaticallyEstimateMaximumHeartRate
+                                    ? "Fallback maximum: "
+                                    : "Maximum: "
+                            )
+                                + "\(Int(settings.metricSettings.heartRateZones.maximumHeartRateBPM)) bpm",
                             value: $settings.metricSettings.heartRateZones.maximumHeartRateBPM,
                             in: 100...240
                         )
+                        Text(
+                            "When enabled and date of birth is accessible, the app estimates "
+                                + "maximum HR for the workout date using "
+                                + "\(AgeBasedMaximumHeartRateEstimate.formula). "
+                                + "The result and zone boundaries are rounded to whole BPM. "
+                                + "The configured value is used when Health access is unavailable."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
                     if settings.metricSettings.heartRateZones.method == .heartRateReserve {
                         Stepper(
@@ -144,6 +166,21 @@ struct SettingsView: View {
                 }
                 Section("Privacy") {
                     Button("How your data is handled") { showPrivacy = true }
+                    Button {
+                        requestHealthAccess()
+                    } label: {
+                        if isRequestingHealthAccess {
+                            Label("Reviewing Health Access…", systemImage: "heart.text.square")
+                        } else {
+                            Label("Review Health Access", systemImage: "heart.text.square")
+                        }
+                    }
+                    .disabled(isRequestingHealthAccess)
+                    if let healthAccessMessage {
+                        Text(healthAccessMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     Text("Heart-rate zones and derived metrics are for personal analysis, not medical guidance.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
@@ -164,6 +201,22 @@ struct SettingsView: View {
             .toolbar { Button("Done") { settings.persist(); dismiss() } }
             .sheet(isPresented: $showPrivacy) { PrivacyView() }
             .onDisappear { settings.persist() }
+        }
+    }
+
+    private func requestHealthAccess() {
+        isRequestingHealthAccess = true
+        healthAccessMessage = nil
+        Task {
+            defer { isRequestingHealthAccess = false }
+            do {
+                try await environment.healthClient.requestReadAuthorization()
+                healthAccessMessage =
+                    "Health access review completed. Health does not report "
+                    + "which read permissions were granted."
+            } catch {
+                healthAccessMessage = error.localizedDescription
+            }
         }
     }
 

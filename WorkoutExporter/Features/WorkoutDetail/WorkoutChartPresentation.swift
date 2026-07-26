@@ -9,6 +9,9 @@ struct WorkoutChartPresentation: Sendable {
     let heartRateSamples: [WorkoutSample]
     let pacePoints: [RoutePoint]
     let elevationPoints: [RoutePoint]
+    let heartRateDomain: WorkoutChartDomain?
+    let paceDomain: WorkoutChartDomain?
+    let elevationDomain: WorkoutChartDomain?
     let mapRoutes: [MapRoutePresentation]
     let routeBounds: RouteBounds?
 
@@ -31,23 +34,49 @@ struct WorkoutChartPresentation: Sendable {
         }
         let routeCount = max(1, detail.routes.count)
         let perRouteLimit = max(2, Self.mapPointLimit / routeCount)
-
-        routePoints = sortedRoutePoints
-        routeMetrics = sortedRouteMetrics
-        heartRateSamples = Self.downsampleChart(
+        let displayedHeartRate = Self.downsampleChart(
             sortedHeartRate,
             limit: Self.chartPointLimit,
             value: \.value
         )
-        pacePoints = Self.downsampleChart(
+        let displayedPace = Self.downsampleChart(
             movingRoutePoints,
             limit: Self.chartPointLimit,
             value: { $0.speedMetersPerSecond ?? 0 }
         )
-        elevationPoints = Self.downsampleChart(
+        let displayedElevation = Self.downsampleChart(
             sortedRoutePoints,
             limit: Self.chartPointLimit,
             value: \.altitudeMeters
+        )
+
+        routePoints = sortedRoutePoints
+        routeMetrics = sortedRouteMetrics
+        heartRateSamples = displayedHeartRate
+        pacePoints = displayedPace
+        elevationPoints = displayedElevation
+        heartRateDomain = WorkoutChartDomain(
+            points: displayedHeartRate,
+            date: \.startDate,
+            value: \.value,
+            minimumValuePadding: 1
+        )
+        paceDomain = WorkoutChartDomain(
+            points: displayedPace,
+            date: \.timestamp,
+            value: {
+                guard let speed = $0.speedMetersPerSecond, speed > 0 else {
+                    return 0
+                }
+                return 1_000 / speed
+            },
+            minimumValuePadding: 5
+        )
+        elevationDomain = WorkoutChartDomain(
+            points: displayedElevation,
+            date: \.timestamp,
+            value: \.altitudeMeters,
+            minimumValuePadding: 1
         )
         mapRoutes = detail.routes
             .map { routeID, points in
@@ -177,6 +206,44 @@ struct WorkoutChartPresentation: Sendable {
             <= after[keyPath: date].timeIntervalSince(target)
             ? before
             : after
+    }
+}
+
+struct WorkoutChartDomain: Equatable, Sendable {
+    let date: ClosedRange<Date>
+    let value: ClosedRange<Double>
+
+    init?<Element>(
+        points: [Element],
+        date: KeyPath<Element, Date>,
+        value: (Element) -> Double,
+        minimumValuePadding: Double
+    ) {
+        guard let first = points.first, let last = points.last else {
+            return nil
+        }
+
+        let firstDate = first[keyPath: date]
+        let lastDate = last[keyPath: date]
+        if firstDate == lastDate {
+            self.date = (
+                firstDate.addingTimeInterval(-0.5)
+            )...(
+                lastDate.addingTimeInterval(0.5)
+            )
+        } else {
+            self.date = firstDate...lastDate
+        }
+
+        let values = points.map(value).filter { $0.isFinite }
+        guard let minimum = values.min(), let maximum = values.max() else {
+            return nil
+        }
+        let padding = max(
+            (maximum - minimum) * 0.08,
+            minimumValuePadding
+        )
+        self.value = (minimum - padding)...(maximum + padding)
     }
 }
 

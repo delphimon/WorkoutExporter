@@ -270,18 +270,21 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
     ) -> [HeartRateZoneResult] {
         let ordered = samples.sorted { $0.startDate < $1.startDate }
         guard !ordered.isEmpty else { return [] }
-        let upperBounds: [Double]
+        let calculatedUpperBounds: [Double]
         switch settings.method {
         case .manual:
-            upperBounds = settings.manualUpperBoundsBPM.sorted()
+            calculatedUpperBounds = settings.manualUpperBoundsBPM.sorted()
         case .percentMaximum:
-            upperBounds = [0.6, 0.7, 0.8, 0.9].map { settings.maximumHeartRateBPM * $0 }
+            calculatedUpperBounds = [0.6, 0.7, 0.8, 0.9].map {
+                settings.maximumHeartRateBPM * $0
+            }
         case .heartRateReserve:
             let reserve = max(0, settings.maximumHeartRateBPM - settings.restingHeartRateBPM)
-            upperBounds = [0.6, 0.7, 0.8, 0.9].map {
+            calculatedUpperBounds = [0.6, 0.7, 0.8, 0.9].map {
                 settings.restingHeartRateBPM + reserve * $0
             }
         }
+        let upperBounds = calculatedUpperBounds.map { $0.rounded() }
         var durations = Array(repeating: 0.0, count: upperBounds.count + 1)
         for index in ordered.indices {
             let sample = ordered[index]

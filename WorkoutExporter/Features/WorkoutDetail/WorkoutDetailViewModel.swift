@@ -15,15 +15,28 @@ final class WorkoutDetailViewModel {
 
     func load(
         id: UUID,
+        referenceDate: Date,
         client: any HealthKitClient,
         settings: MetricCalculationSettings
     ) async {
         state = .loading
         chartPresentation = nil
         do {
+            var effectiveSettings = settings
+            let zoneSettings = settings.heartRateZones
+            if zoneSettings.method != .manual,
+               zoneSettings.automaticallyEstimateMaximumHeartRate,
+               let dateOfBirth = try? await client.fetchDateOfBirthComponents(),
+               let estimate = AgeBasedMaximumHeartRateEstimate(
+                   dateOfBirthComponents: dateOfBirth,
+                   asOf: referenceDate
+                ) {
+                effectiveSettings.heartRateZones.maximumHeartRateBPM =
+                    estimate.maximumHeartRateBPM.rounded()
+            }
             let detail = try await client.fetchWorkoutDetail(
                 id: id,
-                settings: settings
+                settings: effectiveSettings
             )
             state = .loaded(detail)
             let presentation = await Task.detached(priority: .userInitiated) {

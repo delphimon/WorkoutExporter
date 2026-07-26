@@ -5,6 +5,7 @@ protocol HealthKitClient: Sendable {
     func requestReadAuthorization() async throws
     func fetchWorkouts(limit: Int) async throws -> [WorkoutSummary]
     func fetchWorkoutRoutePreview(id: UUID) async throws -> WorkoutRoutePreview?
+    func fetchDateOfBirthComponents() async throws -> DateComponents?
     func fetchWorkoutDetail(id: UUID, settings: MetricCalculationSettings) async throws -> WorkoutDetail
 }
 
@@ -19,6 +20,10 @@ protocol WorkoutRouteRepository: Sendable {
 
 extension HealthKitClient {
     func fetchWorkoutRoutePreview(id: UUID) async throws -> WorkoutRoutePreview? {
+        nil
+    }
+
+    func fetchDateOfBirthComponents() async throws -> DateComponents? {
         nil
     }
 }

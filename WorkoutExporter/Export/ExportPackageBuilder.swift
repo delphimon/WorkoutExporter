@@ -159,6 +159,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
             result.derived.heartRateZones = nil
             result.metricSettings.heartRateZones = HeartRateZoneSettings(
                 method: .manual,
+                automaticallyEstimateMaximumHeartRate: false,
                 maximumHeartRateBPM: 0,
                 restingHeartRateBPM: 0,
                 manualUpperBoundsBPM: []
@@ -319,6 +320,8 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         Split mode: \(detail.metricSettings.splitMode.rawValue)
         Split distance: \(detail.metricSettings.splitDistanceMeters) m
         Split elapsed interval: \(detail.metricSettings.splitElapsedTime) s
+        Heart-rate zone method: \(detail.metricSettings.heartRateZones.method.rawValue)
+        Heart-rate maximum: \(detail.metricSettings.heartRateZones.maximumHeartRateBPM) bpm
         Limitations:
         HealthKit can return no accessible data when read permission is denied.
         Missing route or heart-rate data is exported as missing, never fabricated.

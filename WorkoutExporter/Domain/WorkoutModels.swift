@@ -131,9 +131,84 @@ enum HeartRateZoneMethod: String, Codable, CaseIterable, Sendable {
 
 struct HeartRateZoneSettings: Codable, Hashable, Sendable {
     var method: HeartRateZoneMethod = .percentMaximum
+    var automaticallyEstimateMaximumHeartRate = true
     var maximumHeartRateBPM = 190.0
     var restingHeartRateBPM = 60.0
     var manualUpperBoundsBPM = [120.0, 140.0, 155.0, 170.0]
+
+    private enum CodingKeys: String, CodingKey {
+        case method
+        case automaticallyEstimateMaximumHeartRate
+        case maximumHeartRateBPM
+        case restingHeartRateBPM
+        case manualUpperBoundsBPM
+    }
+
+    init(
+        method: HeartRateZoneMethod = .percentMaximum,
+        automaticallyEstimateMaximumHeartRate: Bool = true,
+        maximumHeartRateBPM: Double = 190,
+        restingHeartRateBPM: Double = 60,
+        manualUpperBoundsBPM: [Double] = [120, 140, 155, 170]
+    ) {
+        self.method = method
+        self.automaticallyEstimateMaximumHeartRate = automaticallyEstimateMaximumHeartRate
+        self.maximumHeartRateBPM = maximumHeartRateBPM
+        self.restingHeartRateBPM = restingHeartRateBPM
+        self.manualUpperBoundsBPM = manualUpperBoundsBPM
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        method = try container.decodeIfPresent(HeartRateZoneMethod.self, forKey: .method)
+            ?? .percentMaximum
+        automaticallyEstimateMaximumHeartRate = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .automaticallyEstimateMaximumHeartRate
+        ) ?? true
+        maximumHeartRateBPM = try container.decodeIfPresent(
+            Double.self,
+            forKey: .maximumHeartRateBPM
+        ) ?? 190
+        restingHeartRateBPM = try container.decodeIfPresent(
+            Double.self,
+            forKey: .restingHeartRateBPM
+        ) ?? 60
+        manualUpperBoundsBPM = try container.decodeIfPresent(
+            [Double].self,
+            forKey: .manualUpperBoundsBPM
+        ) ?? [120, 140, 155, 170]
+    }
+}
+
+struct AgeBasedMaximumHeartRateEstimate: Hashable, Sendable {
+    static let formula = "208 − (0.7 × age)"
+
+    var ageYears: Int
+    var maximumHeartRateBPM: Double
+
+    init?(
+        dateOfBirthComponents: DateComponents,
+        asOf referenceDate: Date
+    ) {
+        var calendar = dateOfBirthComponents.calendar
+            ?? Calendar(identifier: .gregorian)
+        if let timeZone = dateOfBirthComponents.timeZone {
+            calendar.timeZone = timeZone
+        }
+        guard let birthDate = calendar.date(from: dateOfBirthComponents),
+              birthDate <= referenceDate,
+              let age = calendar.dateComponents(
+                  [.year],
+                  from: birthDate,
+                  to: referenceDate
+              ).year,
+              (1...120).contains(age) else {
+            return nil
+        }
+        ageYears = age
+        maximumHeartRateBPM = 208 - (0.7 * Double(age))
+    }
 }
 
 struct MetricCalculationSettings: Codable, Hashable, Sendable {
@@ -246,6 +321,29 @@ struct HeartRateZoneResult: Identifiable, Codable, Hashable, Sendable {
     var lowerBoundBPM: Double
     var upperBoundBPM: Double?
     var duration: TimeInterval
+
+    var rangeDescription: String {
+        let lower = Int(lowerBoundBPM.rounded())
+        if lowerBoundBPM <= 0, let upperBoundBPM {
+            return "< \(Int(upperBoundBPM.rounded())) bpm"
+        }
+        if let upperBoundBPM {
+            let inclusiveUpper = max(lower, Int(upperBoundBPM.rounded()) - 1)
+            return "\(lower)–\(inclusiveUpper) bpm"
+        }
+        return "\(lower)+ bpm"
+    }
+
+    var durationDescription: String {
+        let totalSeconds = max(0, Int(duration.rounded()))
+        let hours = totalSeconds / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
 }
 
 struct DerivedMetrics: Codable, Hashable, Sendable {

@@ -3,6 +3,11 @@
 Workout Exporter is local-first:
 
 - Health data is read and processed locally on the iPhone.
+- If Health grants access to date of birth, it is used in memory to calculate
+  age on the workout date and estimate maximum heart rate. Date of birth and
+  exact age are not persisted or exported. When heart-rate data is included,
+  exports contain the resulting maximum-HR setting and zone boundaries so the
+  calculation remains reproducible.
 - Route coordinates are provided to Apple's MapKit services when the app renders
   a route thumbnail or requests a nearby trail, physical feature, or neighborhood
   name. Results are labeled as Apple Maps suggestions and cached only in memory.

@@ -1,6 +1,7 @@
 import Charts
 import MapKit
 import SwiftUI
+import UIKit
 
 struct WorkoutDetailView: View {
     let workout: WorkoutSummary
@@ -71,7 +72,12 @@ struct WorkoutDetailView: View {
             WorkoutLocationTagEditor(workout: workout)
         }
         .task {
-            await model.load(id: workout.id, client: environment.healthClient, settings: settings.metricSettings)
+            await model.load(
+                id: workout.id,
+                referenceDate: workout.startDate,
+                client: environment.healthClient,
+                settings: settings.metricSettings
+            )
         }
     }
 
@@ -304,33 +310,36 @@ private struct SynchronizedRouteContext: View {
         if !presentation.routePoints.isEmpty {
             SynchronizedRouteMap(
                 presentation: presentation,
-                selectedDate: selectedDate
+                selectedDate: displayedDate
             )
                 .frame(height: 210)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-            if let selectedDate {
-                HStack {
-                    Label(elapsedTime(for: selectedDate), systemImage: "clock")
-                    Spacer()
-                    Label(
-                        selectedDistance(for: selectedDate),
-                        systemImage: "arrow.left.and.right"
-                    )
-                }
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-            } else {
-                Text("Touch and slide across the chart to inspect a time and map position.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
+
+        HStack {
+            Label(elapsedTime(for: displayedDate), systemImage: "clock")
+            Spacer()
+            Label(
+                selectedDistance(for: displayedDate),
+                systemImage: "arrow.left.and.right"
+            )
+        }
+        .font(.subheadline.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .frame(height: 24)
+        .accessibilityIdentifier("chart-time-distance")
+    }
+
+    private var displayedDate: Date {
+        selectedDate ?? detail.summary.startDate
     }
 
     private func elapsedTime(for date: Date) -> String {
         MeasurementFormatterFactory.duration(
-            max(0, date.timeIntervalSince(detail.summary.startDate))
+            min(
+                detail.summary.duration,
+                max(0, date.timeIntervalSince(detail.summary.startDate))
+            )
         )
     }
 
@@ -423,6 +432,54 @@ private struct SynchronizedRouteMap: View {
     }
 }
 
+private struct ChartValueOverlay: View {
+    let plotFrame: Anchor<CGRect>?
+    let xPosition: CGFloat?
+    let yPosition: CGFloat?
+    let text: String?
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let plotFrame,
+               let xPosition,
+               let yPosition,
+               let text {
+                let frame = geometry[plotFrame]
+                let horizontalInset = min(60, frame.width / 2)
+                let x = min(
+                    max(
+                        frame.minX + xPosition,
+                        frame.minX + horizontalInset
+                    ),
+                    frame.maxX - horizontalInset
+                )
+                let y = max(
+                    frame.minY + 16,
+                    frame.minY + yPosition - 24
+                )
+
+                Text(text)
+                    .font(.caption.bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color(uiColor: .systemBackground))
+                    )
+                    .overlay {
+                        Capsule()
+                            .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                    .position(x: x, y: y)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 private struct HeartRateSection: View {
     let detail: WorkoutDetail
     let presentation: WorkoutChartPresentation?
@@ -442,59 +499,115 @@ private struct HeartRateSection: View {
             )
             .padding([.horizontal, .top])
 
-            let selectedSample = selectedDate.flatMap {
-                presentation.nearestHeartRateSample(to: $0)
-            }
-            Chart {
-                ForEach(presentation.heartRateSamples) { sample in
-                    LineMark(
-                        x: .value("Time", sample.startDate),
-                        y: .value("BPM", sample.value)
-                    )
-                    .foregroundStyle(.red)
+            if let chartDomain = presentation.heartRateDomain {
+                let selectedSample = selectedDate.flatMap {
+                    presentation.nearestHeartRateSample(to: $0)
                 }
-                if let selectedSample {
-                    RuleMark(
-                        x: .value(
-                            "Selected time",
-                            selectedSample.startDate
+                Chart {
+                    ForEach(presentation.heartRateSamples) { sample in
+                        LineMark(
+                            x: .value("Time", sample.startDate),
+                            y: .value("BPM", sample.value)
                         )
-                    )
+                        .foregroundStyle(.red)
+                    }
+                    if let selectedSample {
+                        RuleMark(
+                            x: .value(
+                                "Selected time",
+                                selectedSample.startDate
+                            )
+                        )
                         .foregroundStyle(.secondary)
-                    PointMark(
-                        x: .value("Selected time", selectedSample.startDate),
-                        y: .value("BPM", selectedSample.value)
-                    )
-                    .foregroundStyle(.red)
-                    .annotation(position: .top) {
-                        Text("\(Int(selectedSample.value.rounded())) bpm")
-                            .font(.caption.bold())
-                            .padding(6)
-                            .background(.regularMaterial, in: Capsule())
+                        PointMark(
+                            x: .value(
+                                "Selected time",
+                                selectedSample.startDate
+                            ),
+                            y: .value("BPM", selectedSample.value)
+                        )
+                        .foregroundStyle(.red)
                     }
                 }
+                .chartXSelection(value: $selectedDate)
+                .chartXScale(domain: chartDomain.date)
+                .chartYScale(domain: chartDomain.value)
+                .chartYAxisLabel("beats/min")
+                .chartOverlay { proxy in
+                    ChartValueOverlay(
+                        plotFrame: proxy.plotFrame,
+                        xPosition: selectedSample.flatMap {
+                            proxy.position(forX: $0.startDate)
+                        },
+                        yPosition: selectedSample.flatMap {
+                            proxy.position(forY: $0.value)
+                        },
+                        text: selectedSample.map {
+                            "\(Int($0.value.rounded())) bpm"
+                        }
+                    )
+                }
+                .frame(height: 320)
+                .padding()
+                .accessibilityIdentifier("heart-rate-chart")
             }
-            .chartXSelection(value: $selectedDate)
-            .chartYAxisLabel("beats/min")
-            .frame(height: 320)
-            .padding()
 
-            HStack {
-                MetricCard("Minimum", "\(Int(detail.derived.minimumHeartRateBPM?.value.rounded() ?? 0)) bpm", "arrow.down")
-                MetricCard("Maximum", "\(Int(detail.derived.maximumHeartRateBPM?.value.rounded() ?? 0)) bpm", "arrow.up")
+            HStack(spacing: 8) {
+                CompactHeartRateMetric(
+                    title: "Minimum",
+                    value: "\(Int(detail.derived.minimumHeartRateBPM?.value.rounded() ?? 0)) bpm",
+                    icon: "arrow.down",
+                    accessibilityIdentifier: "heart-rate-minimum-metric"
+                )
+                CompactHeartRateMetric(
+                    title: "Maximum",
+                    value: "\(Int(detail.derived.maximumHeartRateBPM?.value.rounded() ?? 0)) bpm",
+                    icon: "arrow.up",
+                    accessibilityIdentifier: "heart-rate-maximum-metric"
+                )
             }
             .padding(.horizontal)
 
             if let zones = detail.derived.heartRateZones {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Time in Heart-Rate Zones").font(.headline)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Heart-Rate Zones").font(.headline)
+
                     ForEach(zones) { zone in
-                        LabeledContent(
-                            "Zone \(zone.zone)",
-                            value: MeasurementFormatterFactory.duration(zone.duration)
-                        )
+                        HStack(spacing: 6) {
+                            Text("Zone \(zone.zone)")
+                                .foregroundStyle(zoneColor(zone.zone))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .frame(width: 50, alignment: .leading)
+                            ProgressView(
+                                value: zone.duration,
+                                total: max(totalZoneDuration, 1)
+                            )
+                            .tint(zoneColor(zone.zone))
+                            .frame(maxWidth: .infinity)
+                            Text(zone.durationDescription)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .frame(width: 64, alignment: .trailing)
+                            .accessibilityIdentifier(
+                                "heart-rate-zone-duration-\(zone.zone)"
+                            )
+                            Text(zone.rangeDescription)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .frame(width: 90, alignment: .trailing)
+                                .accessibilityIdentifier(
+                                    "heart-rate-zone-range-\(zone.zone)"
+                                )
+                        }
+                        .font(.subheadline)
                     }
-                    Text("Personal analysis only; not medical guidance.")
+                    Text(
+                        "Estimated time in each heart-rate zone. "
+                            + "Personal analysis only; not medical guidance."
+                    )
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -504,6 +617,47 @@ private struct HeartRateSection: View {
             ProgressView("Preparing chart…")
                 .frame(maxWidth: .infinity, minHeight: 400)
         }
+    }
+
+    private var totalZoneDuration: TimeInterval {
+        detail.derived.heartRateZones?.reduce(0) { $0 + $1.duration } ?? 0
+    }
+
+    private func zoneColor(_ zone: Int) -> Color {
+        switch zone {
+        case 1: .blue
+        case 2: .cyan
+        case 3: .green
+        case 4: .orange
+        default: .pink
+        }
+    }
+}
+
+private struct CompactHeartRateMetric: View {
+    let title: String
+    let value: String
+    let icon: String
+    let accessibilityIdentifier: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(title, systemImage: icon)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(uiColor: .secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 
@@ -525,54 +679,71 @@ private struct PaceSection: View {
                 let selectedPoint = selectedDate.flatMap {
                     presentation.nearestPacePoint(to: $0)
                 }
-                Chart {
-                    ForEach(presentation.pacePoints) { point in
-                        LineMark(
-                            x: .value("Time", point.timestamp),
-                            y: .value(
-                                "Pace",
-                                displayPaceMinutes(
-                                    point.speedMetersPerSecond
+                if let chartDomain = presentation.paceDomain {
+                    Chart {
+                        ForEach(presentation.pacePoints) { point in
+                            LineMark(
+                                x: .value("Time", point.timestamp),
+                                y: .value(
+                                    "Pace",
+                                    displayPaceMinutes(
+                                        point.speedMetersPerSecond
+                                    )
                                 )
                             )
-                        )
-                    }
-                    if let selectedPoint {
-                        RuleMark(
-                            x: .value(
-                                "Selected time",
-                                selectedPoint.timestamp
+                        }
+                        if let selectedPoint {
+                            RuleMark(
+                                x: .value(
+                                    "Selected time",
+                                    selectedPoint.timestamp
+                                )
                             )
-                        )
                             .foregroundStyle(.secondary)
-                        PointMark(
-                            x: .value(
-                                "Selected time",
-                                selectedPoint.timestamp
-                            ),
-                            y: .value(
-                                "Pace",
-                                displayPaceMinutes(
-                                    selectedPoint.speedMetersPerSecond
-                                )
-                            )
-                        )
-                        .annotation(position: .top) {
-                            Text(
-                                selectedPace(
-                                    speedMetersPerSecond:
+                            PointMark(
+                                x: .value(
+                                    "Selected time",
+                                    selectedPoint.timestamp
+                                ),
+                                y: .value(
+                                    "Pace",
+                                    displayPaceMinutes(
                                         selectedPoint.speedMetersPerSecond
+                                    )
                                 )
                             )
-                            .font(.caption.bold())
-                            .padding(6)
-                            .background(.regularMaterial, in: Capsule())
                         }
                     }
+                    .chartXSelection(value: $selectedDate)
+                    .chartXScale(domain: chartDomain.date)
+                    .chartYScale(
+                        domain: displayPaceDomain(chartDomain.value)
+                    )
+                    .chartYAxisLabel("min/\(units.paceUnitLabel)")
+                    .chartOverlay { proxy in
+                        ChartValueOverlay(
+                            plotFrame: proxy.plotFrame,
+                            xPosition: selectedPoint.flatMap {
+                                proxy.position(forX: $0.timestamp)
+                            },
+                            yPosition: selectedPoint.flatMap {
+                                proxy.position(
+                                    forY: displayPaceMinutes(
+                                        $0.speedMetersPerSecond
+                                    )
+                                )
+                            },
+                            text: selectedPoint.map {
+                                selectedPace(
+                                    speedMetersPerSecond:
+                                        $0.speedMetersPerSecond
+                                )
+                            }
+                        )
+                    }
+                    .frame(height: 280)
+                    .accessibilityIdentifier("pace-chart")
                 }
-                .chartXSelection(value: $selectedDate)
-                .chartYAxisLabel("min/\(units.paceUnitLabel)")
-                .frame(height: 280)
             } else if presentation == nil {
                 ProgressView("Preparing chart…")
                     .frame(maxWidth: .infinity, minHeight: 400)
@@ -619,11 +790,30 @@ private struct PaceSection: View {
 
     private func displayPaceMinutes(_ metersPerSecond: Double?) -> Double {
         guard let metersPerSecond, metersPerSecond > 0 else { return 0 }
-        let secondsPerKilometer = 1_000 / metersPerSecond
+        return displayPaceMinutes(
+            secondsPerKilometer: 1_000 / metersPerSecond
+        )
+    }
+
+    private func displayPaceMinutes(
+        secondsPerKilometer: Double
+    ) -> Double {
         let seconds = units == .metric
             ? secondsPerKilometer
             : secondsPerKilometer * 1.609_344
         return seconds / 60
+    }
+
+    private func displayPaceDomain(
+        _ secondsPerKilometer: ClosedRange<Double>
+    ) -> ClosedRange<Double> {
+        let lowerBound = displayPaceMinutes(
+            secondsPerKilometer: secondsPerKilometer.lowerBound
+        )
+        let upperBound = displayPaceMinutes(
+            secondsPerKilometer: secondsPerKilometer.upperBound
+        )
+        return lowerBound...upperBound
     }
 
     private func selectedPace(speedMetersPerSecond: Double?) -> String {
@@ -655,56 +845,71 @@ private struct ElevationSection: View {
             )
             .padding([.horizontal, .top])
 
-            let selectedPoint = selectedDate.flatMap {
-                presentation.nearestElevationPoint(to: $0)
-            }
-            Chart {
-                ForEach(presentation.elevationPoints) { point in
-                    AreaMark(
-                        x: .value("Time", point.timestamp),
-                        y: .value(
-                            "Altitude",
-                            displayAltitude(point.altitudeMeters)
-                        )
-                    )
-                    .foregroundStyle(.green.opacity(0.5))
+            if let chartDomain = presentation.elevationDomain {
+                let selectedPoint = selectedDate.flatMap {
+                    presentation.nearestElevationPoint(to: $0)
                 }
-                if let selectedPoint {
-                    RuleMark(
-                        x: .value(
-                            "Selected time",
-                            selectedPoint.timestamp
-                        )
-                    )
-                        .foregroundStyle(.secondary)
-                    PointMark(
-                        x: .value(
-                            "Selected time",
-                            selectedPoint.timestamp
-                        ),
-                        y: .value(
-                            "Altitude",
-                            displayAltitude(selectedPoint.altitudeMeters)
-                        )
-                    )
-                    .foregroundStyle(.green)
-                    .annotation(position: .top) {
-                        Text(
-                            MeasurementFormatterFactory.elevation(
-                                selectedPoint.altitudeMeters,
-                                preference: units
+                Chart {
+                    ForEach(presentation.elevationPoints) { point in
+                        AreaMark(
+                            x: .value("Time", point.timestamp),
+                            y: .value(
+                                "Altitude",
+                                displayAltitude(point.altitudeMeters)
                             )
                         )
-                        .font(.caption.bold())
-                        .padding(6)
-                        .background(.regularMaterial, in: Capsule())
+                        .foregroundStyle(.green.opacity(0.5))
+                    }
+                    if let selectedPoint {
+                        RuleMark(
+                            x: .value(
+                                "Selected time",
+                                selectedPoint.timestamp
+                            )
+                        )
+                        .foregroundStyle(.secondary)
+                        PointMark(
+                            x: .value(
+                                "Selected time",
+                                selectedPoint.timestamp
+                            ),
+                            y: .value(
+                                "Altitude",
+                                displayAltitude(selectedPoint.altitudeMeters)
+                            )
+                        )
+                        .foregroundStyle(.green)
                     }
                 }
+                .chartXSelection(value: $selectedDate)
+                .chartXScale(domain: chartDomain.date)
+                .chartYScale(
+                    domain: displayAltitudeDomain(chartDomain.value)
+                )
+                .chartYAxisLabel(units == .metric ? "meters" : "feet")
+                .chartOverlay { proxy in
+                    ChartValueOverlay(
+                        plotFrame: proxy.plotFrame,
+                        xPosition: selectedPoint.flatMap {
+                            proxy.position(forX: $0.timestamp)
+                        },
+                        yPosition: selectedPoint.flatMap {
+                            proxy.position(
+                                forY: displayAltitude($0.altitudeMeters)
+                            )
+                        },
+                        text: selectedPoint.map {
+                            MeasurementFormatterFactory.elevation(
+                                $0.altitudeMeters,
+                                preference: units
+                            )
+                        }
+                    )
+                }
+                .frame(height: 320)
+                .padding()
+                .accessibilityIdentifier("elevation-chart")
             }
-            .chartXSelection(value: $selectedDate)
-            .chartYAxisLabel(units == .metric ? "meters" : "feet")
-            .frame(height: 320)
-            .padding()
             MetricCard(
                 "Recorded Workout Gain",
                 MeasurementFormatterFactory.elevation(detail.summary.elevationGainMeters, preference: units),
@@ -721,6 +926,14 @@ private struct ElevationSection: View {
         Measurement(value: meters, unit: UnitLength.meters)
             .converted(to: units.elevationUnit)
             .value
+    }
+
+    private func displayAltitudeDomain(
+        _ meters: ClosedRange<Double>
+    ) -> ClosedRange<Double> {
+        let lowerBound = displayAltitude(meters.lowerBound)
+        let upperBound = displayAltitude(meters.upperBound)
+        return lowerBound...upperBound
     }
 }
 

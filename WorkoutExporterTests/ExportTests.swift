@@ -328,6 +328,10 @@ final class ExportTests: XCTestCase {
         XCTAssertNil(filtered.derived.heartRateZones)
         XCTAssertEqual(filtered.metricSettings.heartRateZones.maximumHeartRateBPM, 0)
         XCTAssertEqual(filtered.metricSettings.heartRateZones.restingHeartRateBPM, 0)
+        XCTAssertFalse(
+            filtered.metricSettings.heartRateZones
+                .automaticallyEstimateMaximumHeartRate
+        )
         XCTAssertTrue(filtered.metricSettings.heartRateZones.manualUpperBoundsBPM.isEmpty)
         XCTAssertTrue(filtered.derived.splits.allSatisfy {
             $0.averageHeartRateBPM == nil && $0.maximumHeartRateBPM == nil

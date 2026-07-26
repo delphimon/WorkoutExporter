@@ -50,6 +50,73 @@ final class WorkoutExporterUITests: XCTestCase {
                 || app.otherElements["synchronized-route-map"]
                     .waitForExistence(timeout: 5)
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["chart-time-distance"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(
+            app.staticTexts[
+                "Touch and slide across the chart to inspect a time and map position."
+            ].exists
+        )
+        let heartRateChart = app.descendants(matching: .any)
+            .matching(identifier: "heart-rate-chart")
+            .firstMatch
+        XCTAssertTrue(heartRateChart.waitForExistence(timeout: 5))
+        let chartFrameBeforeScrub = heartRateChart.frame
+        heartRateChart.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)
+        ).press(
+            forDuration: 0.1,
+            thenDragTo: heartRateChart.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+            )
+        )
+        XCTAssertEqual(
+            heartRateChart.frame.minY,
+            chartFrameBeforeScrub.minY,
+            accuracy: 1
+        )
+        XCTAssertEqual(
+            heartRateChart.frame.height,
+            chartFrameBeforeScrub.height,
+            accuracy: 1
+        )
+        app.swipeUp()
+        XCTAssertTrue(
+            app.staticTexts["Heart-Rate Zones"].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(
+            app.staticTexts["Method: Percentage of maximum heart rate"].exists
+        )
+        XCTAssertFalse(
+            app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS 'workout date: 208'")
+            ).firstMatch.exists
+        )
+        XCTAssertTrue(app.staticTexts["< 108 bpm"].exists)
+        XCTAssertTrue(app.staticTexts["108–125 bpm"].exists)
+
+        let minimumMetric = app.descendants(matching: .any)
+            .matching(identifier: "heart-rate-minimum-metric")
+            .firstMatch
+        let maximumMetric = app.descendants(matching: .any)
+            .matching(identifier: "heart-rate-maximum-metric")
+            .firstMatch
+        XCTAssertTrue(minimumMetric.exists)
+        XCTAssertTrue(maximumMetric.exists)
+        XCTAssertLessThan(minimumMetric.frame.height, 80)
+        XCTAssertLessThan(maximumMetric.frame.height, 80)
+
+        let zoneDuration = app.descendants(matching: .any)
+            .matching(identifier: "heart-rate-zone-duration-1")
+            .firstMatch
+        let zoneRange = app.descendants(matching: .any)
+            .matching(identifier: "heart-rate-zone-range-1")
+            .firstMatch
+        XCTAssertTrue(zoneDuration.exists)
+        XCTAssertTrue(zoneRange.exists)
+        XCTAssertLessThanOrEqual(zoneDuration.frame.maxX, zoneRange.frame.minX)
 
         app.buttons["workout-export-button"].tap()
         XCTAssertTrue(app.navigationBars["Export"].waitForExistence(timeout: 3))
