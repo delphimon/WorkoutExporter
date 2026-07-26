@@ -54,6 +54,113 @@ final class WorkoutListViewModelTests: XCTestCase {
         XCTAssertFalse(model.canLoadMore)
     }
 
+    func testLoadMoreSearchesUntilAFilteredMatchOrActualEnd() async {
+        let workouts = (0..<120).map { index -> WorkoutSummary in
+            var summary = SyntheticWorkoutFactory.make(
+                .cleanOutdoorRun,
+                index: index
+            ).summary
+            summary.id = UUID()
+            summary.activityName = index < 100 ? "Running" : "Hiking"
+            return summary
+        }
+        let client = ListClient(workouts: workouts)
+        let model = WorkoutListViewModel()
+
+        await model.load(using: client)
+        model.selectedActivity = "Hiking"
+        XCTAssertTrue(model.filteredWorkouts.isEmpty)
+
+        await model.loadMore(using: client)
+
+        XCTAssertEqual(model.filteredWorkouts.count, 20)
+        XCTAssertFalse(model.canLoadMore)
+        let requestedLimits = await client.requestedLimits()
+        XCTAssertEqual(requestedLimits, [50, 100, 150])
+    }
+
+    func testDateRangesIncludeThisMonthTwelveMonthsAndInclusiveCustomDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let reference = calendar.date(
+            from: DateComponents(
+                year: 2026,
+                month: 7,
+                day: 25,
+                hour: 12
+            )
+        )!
+        func summary(year: Int, month: Int, day: Int) -> WorkoutSummary {
+            var value = SyntheticWorkoutFactory.make(.cleanOutdoorRun).summary
+            value.id = UUID()
+            value.startDate = calendar.date(
+                from: DateComponents(year: year, month: month, day: day, hour: 8)
+            )!
+            value.endDate = value.startDate.addingTimeInterval(value.duration)
+            return value
+        }
+        let model = WorkoutListViewModel()
+        model.workouts = [
+            summary(year: 2026, month: 7, day: 1),
+            summary(year: 2026, month: 6, day: 30),
+            summary(year: 2025, month: 8, day: 1),
+            summary(year: 2025, month: 6, day: 1)
+        ]
+
+        model.dateRange = .thisMonth
+        XCTAssertEqual(
+            model.filteredWorkouts(referenceDate: reference, calendar: calendar).count,
+            1
+        )
+
+        model.dateRange = .twelveMonths
+        XCTAssertEqual(
+            model.filteredWorkouts(referenceDate: reference, calendar: calendar).count,
+            3
+        )
+
+        model.dateRange = .custom
+        model.customStartDate = calendar.date(
+            from: DateComponents(year: 2026, month: 6, day: 30, hour: 23)
+        )!
+        model.customEndDate = calendar.date(
+            from: DateComponents(year: 2026, month: 7, day: 1, hour: 1)
+        )!
+        XCTAssertEqual(
+            model.filteredWorkouts(referenceDate: reference, calendar: calendar).count,
+            2
+        )
+    }
+
+    func testStatsUseNativeSummaryValuesGroupedByActivityType() throws {
+        var first = SyntheticWorkoutFactory.make(.cleanOutdoorRun, index: 1).summary
+        first.activityName = "Running"
+        first.totalDistanceMeters = 1_000
+        first.duration = 600
+        first.elevationGainMeters = 40
+        var second = SyntheticWorkoutFactory.make(.cleanOutdoorRun, index: 2).summary
+        second.activityName = "Running"
+        second.totalDistanceMeters = nil
+        second.duration = 300
+        second.elevationGainMeters = 10
+        var hike = SyntheticWorkoutFactory.make(.hikeWithStops, index: 3).summary
+        hike.activityName = "Hiking"
+        hike.totalDistanceMeters = 2_000
+        hike.duration = 1_200
+        hike.elevationGainMeters = nil
+
+        let groups = WorkoutStatsCalculator.group([first, second, hike])
+        let running = try XCTUnwrap(groups.first { $0.activityName == "Running" })
+        XCTAssertEqual(running.count, 2)
+        XCTAssertEqual(running.totalDistanceMeters, 1_000)
+        XCTAssertEqual(running.totalDuration, 900)
+        XCTAssertEqual(running.totalElevationGainMeters, 50)
+        let hiking = try XCTUnwrap(groups.first { $0.activityName == "Hiking" })
+        XCTAssertEqual(hiking.totalDistanceMeters, 2_000)
+        XCTAssertEqual(hiking.totalDuration, 1_200)
+        XCTAssertNil(hiking.totalElevationGainMeters)
+    }
+
     func testPaginationFailureKeepsLoadedWorkoutsAndLimit() async {
         let workouts = (0..<60).map {
             SyntheticWorkoutFactory.make(.cleanOutdoorRun, index: $0).summary
@@ -97,6 +204,7 @@ final class WorkoutListViewModelTests: XCTestCase {
 private actor ListClient: HealthKitClient {
     nonisolated let isHealthDataAvailable = true
     let workouts: [WorkoutSummary]
+    private var limits: [Int] = []
 
     init(workouts: [WorkoutSummary]) {
         self.workouts = workouts
@@ -105,7 +213,12 @@ private actor ListClient: HealthKitClient {
     func requestReadAuthorization() async throws {}
 
     func fetchWorkouts(limit: Int) async throws -> [WorkoutSummary] {
-        Array(workouts.prefix(limit))
+        limits.append(limit)
+        return Array(workouts.prefix(limit))
+    }
+
+    func requestedLimits() -> [Int] {
+        limits
     }
 
     func fetchWorkoutDetail(

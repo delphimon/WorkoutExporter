@@ -6,6 +6,7 @@ struct WorkoutListView: View {
     @State private var model = WorkoutListViewModel()
     @State private var showFilters = false
     @State private var showSettings = false
+    @State private var showStats = false
     @State private var showBatchExport = false
     @State private var workoutToEditLocationTag: WorkoutSummary?
     @State private var metadataError: String?
@@ -45,6 +46,11 @@ struct WorkoutListView: View {
                     .accessibilityIdentifier("workout-filter-button")
                 Button("Settings", systemImage: "gearshape") { showSettings = true }
                     .accessibilityIdentifier("workout-settings-button")
+                Button("Stats", systemImage: "chart.bar.xaxis") {
+                    showStats = true
+                    Task { await model.loadAll(using: environment.healthClient) }
+                }
+                .accessibilityIdentifier("workout-stats-button")
             }
             ToolbarItem(placement: .topBarLeading) {
                 Button(model.isSelecting ? "Done" : "Select") {
@@ -100,8 +106,15 @@ struct WorkoutListView: View {
         .onChange(of: environment.workoutMetadataStore.customLocationTags) {
             model.customLocationTags = $1
         }
-        .sheet(isPresented: $showFilters) { WorkoutFilterView(model: model) }
+        .fullScreenCover(isPresented: $showFilters) { WorkoutFilterView(model: model) }
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showStats) {
+            WorkoutStatsView(
+                workouts: model.filteredWorkouts,
+                isLoading: model.isLoadingAll,
+                hasMore: model.canLoadMore
+            )
+        }
         .sheet(isPresented: $showBatchExport, onDismiss: syncMetadata) {
             BatchExportView(workoutIDs: Array(model.selectedIDs))
         }
@@ -130,8 +143,28 @@ struct WorkoutListView: View {
             ContentUnavailableView(
                 "No Matching Workouts",
                 systemImage: "figure.walk",
-                description: Text("Change the search or filters, or review Health permissions.")
+                description: Text(
+                    model.canLoadMore
+                        ? "More workouts may be available. Change the filters or load additional history."
+                        : "End of workouts. No activities match the current filters."
+                )
             )
+            .overlay(alignment: .bottom) {
+                if model.canLoadMore {
+                    Button {
+                        Task { await model.loadMore(using: environment.healthClient) }
+                    } label: {
+                        if model.isLoadingMore {
+                            ProgressView("Searching remaining workouts…")
+                        } else {
+                            Label("Search More Workouts", systemImage: "arrow.down.circle")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isLoadingMore)
+                    .padding()
+                }
+            }
         } else {
             List(model.filteredWorkouts) { workout in
                 if model.isSelecting {
@@ -182,11 +215,24 @@ struct WorkoutListView: View {
                     }
                 }
                 if workout.id == model.filteredWorkouts.last?.id, model.canLoadMore {
-                    Button("Load More Workouts") {
+                    Button {
                         Task { await model.loadMore(using: environment.healthClient) }
+                    } label: {
+                        if model.isLoadingMore {
+                            ProgressView("Searching remaining workouts…")
+                        } else {
+                            Text("Load More Workouts")
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+                    .disabled(model.isLoadingMore)
+                    .accessibilityIdentifier("load-more-workouts-button")
+                } else if workout.id == model.filteredWorkouts.last?.id {
+                    Label("End of workouts", systemImage: "checkmark.circle")
                         .frame(maxWidth: .infinity)
-                        .accessibilityIdentifier("load-more-workouts-button")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("end-of-workouts-label")
                 }
             }
             .listStyle(.plain)
@@ -233,9 +279,7 @@ private struct WorkoutRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            if workout.hasRoute {
-                routeThumbnail
-            }
+            routeThumbnail
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label(
@@ -315,19 +359,23 @@ private struct WorkoutRow: View {
     @ViewBuilder
     private var routeThumbnail: some View {
         Group {
-            switch environment.routePresentationStore.state(for: workout.id) {
-            case .loaded(let presentation):
-                if let image = presentation.thumbnail {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else {
+            if !workout.hasRoute {
+                mapPlaceholder(showProgress: false)
+            } else {
+                switch environment.routePresentationStore.state(for: workout.id) {
+                case .loaded(let presentation):
+                    if let image = presentation.thumbnail {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        mapPlaceholder(showProgress: false)
+                    }
+                case .loading:
+                    mapPlaceholder(showProgress: true)
+                case .unavailable, nil:
                     mapPlaceholder(showProgress: false)
                 }
-            case .loading:
-                mapPlaceholder(showProgress: true)
-            case .unavailable, nil:
-                mapPlaceholder(showProgress: false)
             }
         }
         .frame(width: 76, height: 64)
@@ -422,6 +470,18 @@ private struct WorkoutFilterView: View {
                         Text($0.rawValue).tag($0)
                     }
                 }
+                if model.dateRange == .custom {
+                    DatePicker(
+                        "From",
+                        selection: $model.customStartDate,
+                        displayedComponents: .date
+                    )
+                    DatePicker(
+                        "Through",
+                        selection: $model.customEndDate,
+                        displayedComponents: .date
+                    )
+                }
                 Picker("Sort", selection: $model.sortOrder) {
                     ForEach(WorkoutListViewModel.SortOrder.allCases, id: \.self) {
                         Text($0.rawValue).tag($0)
@@ -438,12 +498,16 @@ private struct WorkoutFilterView: View {
                 VStack(alignment: .leading) {
                     Text(
                         "Minimum distance: "
-                            + MeasurementFormatterFactory.distance(
+                            + MeasurementFormatterFactory.distanceSliderValue(
                                 model.minimumDistanceMeters,
                                 preference: settings.distanceUnits
                             )
                     )
-                    Slider(value: $model.minimumDistanceMeters, in: 0...50_000, step: 500)
+                    Slider(
+                        value: minimumDistanceBinding,
+                        in: minimumDistanceRange,
+                        step: settings.distanceUnits.distanceSliderStep
+                    )
                 }
                 Button("Reset Filters", role: .destructive) {
                     model.resetFilters()
@@ -455,11 +519,28 @@ private struct WorkoutFilterView: View {
                 Button("Done") { dismiss() }
             }
         }
-        .presentationDetents([.medium])
+    }
+
+    private var minimumDistanceBinding: Binding<Double> {
+        Binding(
+            get: {
+                settings.distanceUnits.distanceValue(
+                    fromMeters: model.minimumDistanceMeters
+                )
+            },
+            set: {
+                model.minimumDistanceMeters =
+                    settings.distanceUnits.meters(fromDistanceValue: $0)
+            }
+        )
+    }
+
+    private var minimumDistanceRange: ClosedRange<Double> {
+        settings.distanceUnits == .metric ? 0...50 : 0...31
     }
 }
 
-private struct WorkoutLocationTagEditor: View {
+struct WorkoutLocationTagEditor: View {
     let workout: WorkoutSummary
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss

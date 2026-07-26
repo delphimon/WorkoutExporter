@@ -16,72 +16,87 @@ struct ExportView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Formats") {
-                    ForEach(ExportFormat.allCases) { format in
-                        Toggle(format.displayName, isOn: binding(for: format))
-                    }
-                    Toggle("Package as ZIP", isOn: $options.packageAsZIP)
-                }
-                Section("Data") {
-                    Toggle("Raw samples", isOn: $options.includeRawSamples)
-                    Toggle("Derived metrics", isOn: $options.includeDerivedMetrics)
-                    Toggle("Heart rate", isOn: $options.includeHeartRate)
-                    Toggle("GPS route", isOn: $options.includeRoute)
-                    Toggle("Source and device metadata", isOn: $options.includeSourceAndDevice)
-                }
-                Section {
-                    Text("Exported measurements retain their canonical HealthKit or SI units. The app does not convert or replace workout values.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                if isExporting {
-                    Section {
-                        ProgressView(
-                            exportProgress?.message
-                                ?? "Preparing \(requests.count) workout\(requests.count == 1 ? "" : "s")…"
-                        )
-                        Button("Cancel", role: .destructive) { exportTask?.cancel() }
-                    }
-                }
-                if let existingExport, let existingExportURL, outputURL == nil {
-                    Section("Existing Export") {
-                        ShareLink(item: existingExportURL) {
-                            Label(
-                                "Share \(existingExportURL.lastPathComponent)",
-                                systemImage: "square.and.arrow.up"
-                            )
-                        }
-                        .accessibilityIdentifier("share-existing-export-button")
-                        Text(
-                            "Created "
-                                + existingExport.createdAt.formatted(
-                                    date: .abbreviated,
-                                    time: .shortened
+            ScrollViewReader { proxy in
+                Form {
+                    if let existingExport, let existingExportURL, outputURL == nil {
+                        Section("Existing Export") {
+                            ShareLink(item: existingExportURL) {
+                                Label(
+                                    "Share \(existingExportURL.lastPathComponent)",
+                                    systemImage: "square.and.arrow.up"
                                 )
-                                + ". Choose Create to build a fresh export."
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                if let outputURL {
-                    Section("Ready") {
-                        ShareLink(item: outputURL) {
-                            Label("Share \(outputURL.lastPathComponent)", systemImage: "square.and.arrow.up")
+                            }
+                            .accessibilityIdentifier("share-existing-export-button")
+                            Text(
+                                "Created "
+                                    + existingExport.createdAt.formatted(
+                                        date: .abbreviated,
+                                        time: .shortened
+                                    )
+                                    + ". Choose Create to build a fresh export."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
-                        Text(fileSize(outputURL)).font(.caption).foregroundStyle(.secondary)
+                        .id("export-share-section")
+                    }
+                    if let outputURL {
+                        Section("Ready to Share") {
+                            ShareLink(item: outputURL) {
+                                Label(
+                                    "Share \(outputURL.lastPathComponent)",
+                                    systemImage: "square.and.arrow.up"
+                                )
+                            }
+                            Text(fileSize(outputURL))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .id("export-share-section")
+                    }
+                    Section("Formats") {
+                        ForEach(ExportFormat.allCases) { format in
+                            Toggle(format.displayName, isOn: binding(for: format))
+                        }
+                        Toggle("Package as ZIP", isOn: $options.packageAsZIP)
+                    }
+                    Section("Data") {
+                        Toggle("Raw samples", isOn: $options.includeRawSamples)
+                        Toggle("Derived metrics", isOn: $options.includeDerivedMetrics)
+                        Toggle("Heart rate", isOn: $options.includeHeartRate)
+                        Toggle("GPS route", isOn: $options.includeRoute)
+                        Toggle("Source and device metadata", isOn: $options.includeSourceAndDevice)
+                    }
+                    Section {
+                        Text("Exported measurements retain their canonical HealthKit or SI units. The app does not convert or replace workout values.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if isExporting {
+                        Section {
+                            ProgressView(
+                                exportProgress?.message
+                                    ?? "Preparing \(requests.count) workout\(requests.count == 1 ? "" : "s")…"
+                            )
+                            Button("Cancel", role: .destructive) { exportTask?.cancel() }
+                        }
+                    }
+                    if let errorMessage {
+                        Section {
+                            Label(errorMessage, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
                     }
                 }
-                if let errorMessage {
-                    Section {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
+                .accessibilityIdentifier("export-form")
+                .onChange(of: outputURL) {
+                    guard $1 != nil else { return }
+                    withAnimation {
+                        proxy.scrollTo("export-share-section", anchor: .top)
                     }
                 }
             }
-            .accessibilityIdentifier("export-form")
             .navigationTitle("Export")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }

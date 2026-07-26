@@ -140,9 +140,14 @@ actor LiveHealthKitClient: HealthKitClient {
                 throw WorkoutExporterError.noAccessibleData
             }
 
-            let (quantitySamples, quantityWarnings) = try await fetchQuantitySamples(for: workout)
-            let (categories, categoryWarnings) = try await fetchCategorySamples(for: workout)
-            let (routes, routeWarnings) = try await fetchRoutes(for: workout)
+            async let quantityResult = fetchQuantitySamples(for: workout)
+            async let categoryResult = fetchCategorySamples(for: workout)
+            async let routeResult = fetchRoutes(for: workout)
+            let (
+                (quantitySamples, quantityWarnings),
+                (categories, categoryWarnings),
+                (routes, routeWarnings)
+            ) = try await (quantityResult, categoryResult, routeResult)
             cacheRoutePreview(workoutID: id, routes: routes)
             let workoutSummary = try await summary(for: workout, knownRoutes: !routes.isEmpty)
             let events = (workout.workoutEvents ?? []).map {
