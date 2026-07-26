@@ -11,6 +11,8 @@ struct ExportView: View {
     @State private var errorMessage: String?
     @State private var exportTask: Task<Void, Never>?
     @State private var exportProgress: ExportProgress?
+    @State private var existingExport: CachedWorkoutExport?
+    @State private var existingExportURL: URL?
 
     var body: some View {
         NavigationStack {
@@ -43,6 +45,27 @@ struct ExportView: View {
                         Button("Cancel", role: .destructive) { exportTask?.cancel() }
                     }
                 }
+                if let existingExport, let existingExportURL, outputURL == nil {
+                    Section("Existing Export") {
+                        ShareLink(item: existingExportURL) {
+                            Label(
+                                "Share \(existingExportURL.lastPathComponent)",
+                                systemImage: "square.and.arrow.up"
+                            )
+                        }
+                        .accessibilityIdentifier("share-existing-export-button")
+                        Text(
+                            "Created "
+                                + existingExport.createdAt.formatted(
+                                    date: .abbreviated,
+                                    time: .shortened
+                                )
+                                + ". Choose Create to build a fresh export."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
                 if let outputURL {
                     Section("Ready") {
                         ShareLink(item: outputURL) {
@@ -58,6 +81,7 @@ struct ExportView: View {
                     }
                 }
             }
+            .accessibilityIdentifier("export-form")
             .navigationTitle("Export")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
@@ -73,6 +97,7 @@ struct ExportView: View {
                 options.includeRawSamples = settings.includeRawSamples
                 options.includeSourceAndDevice = settings.includeSourceMetadata
                 options.packageAsZIP = settings.packageAsZIP
+                refreshExistingExport()
             }
             .onDisappear {
                 exportTask?.cancel()
@@ -102,7 +127,7 @@ struct ExportView: View {
             do {
                 let directory = environment.exportDirectory
                 try ExportUtilities.createProtectedDirectory(at: directory)
-                outputURL = try await environment.packageBuilder.buildPackage(
+                let result = try await environment.packageBuilder.buildPackageResult(
                     for: requests,
                     options: options,
                     to: directory
@@ -111,10 +136,33 @@ struct ExportView: View {
                         exportProgress = update
                     }
                 }
+                outputURL = result.url
+                if let outputURL {
+                    do {
+                        try environment.workoutMetadataStore.recordExport(
+                            workoutIDs: result.exportedWorkoutIDs,
+                            fileURL: outputURL,
+                            cachePackage: result.exportedWorkoutIDs
+                                == Set(requests.map(\.id))
+                        )
+                        refreshExistingExport()
+                    } catch {
+                        errorMessage = "Export created, but its history could not be saved: "
+                            + error.localizedDescription
+                    }
+                }
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func refreshExistingExport() {
+        let cached = environment.workoutMetadataStore.cachedExport(
+            for: requests.map(\.id)
+        )
+        existingExport = cached?.record
+        existingExportURL = cached?.url
     }
 
     private func fileSize(_ url: URL) -> String {

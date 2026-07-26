@@ -14,6 +14,11 @@ Workout Exporter is local-first:
 - Release code does not log raw Health data.
 - Complete exports are not persisted by the app as a library.
 - Temporary exports older than 24 hours are removed at launch.
+- Workout identifiers marked as exported, user-entered location tags, and
+  temporary-package filenames are stored locally with complete file protection
+  and excluded from backup. Missing or expired package references are pruned.
+- A manual location tag changes only the local secondary label. It does not
+  rename the HealthKit activity type or alter exported data.
 - Source and device metadata can be excluded from exports.
 
 The privacy manifest declares no tracking or developer-collected data. It

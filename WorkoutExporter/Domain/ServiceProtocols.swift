@@ -45,13 +45,18 @@ struct WorkoutExportRequest: Sendable {
     }
 }
 
+struct ExportPackageResult: Sendable {
+    let url: URL
+    let exportedWorkoutIDs: Set<UUID>
+}
+
 protocol ExportPackageBuilding: Sendable {
-    func buildPackage(
+    func buildPackageResult(
         for requests: [WorkoutExportRequest],
         options: ExportOptions,
         to directory: URL,
         progress: @escaping @Sendable (ExportProgress) async -> Void
-    ) async throws -> URL
+    ) async throws -> ExportPackageResult
 }
 
 extension WorkoutExporting {
@@ -65,12 +70,42 @@ extension WorkoutExporting {
 }
 
 extension ExportPackageBuilding {
+    func buildPackageResult(
+        for requests: [WorkoutExportRequest],
+        options: ExportOptions,
+        to directory: URL
+    ) async throws -> ExportPackageResult {
+        try await buildPackageResult(
+            for: requests,
+            options: options,
+            to: directory
+        ) { _ in }
+    }
+
     func buildPackage(
         for requests: [WorkoutExportRequest],
         options: ExportOptions,
         to directory: URL
     ) async throws -> URL {
-        try await buildPackage(for: requests, options: options, to: directory) { _ in }
+        try await buildPackageResult(
+            for: requests,
+            options: options,
+            to: directory
+        ).url
+    }
+
+    func buildPackage(
+        for requests: [WorkoutExportRequest],
+        options: ExportOptions,
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress) async -> Void
+    ) async throws -> URL {
+        try await buildPackageResult(
+            for: requests,
+            options: options,
+            to: directory,
+            progress: progress
+        ).url
     }
 
     func buildPackage(
@@ -79,12 +114,12 @@ extension ExportPackageBuilding {
         to directory: URL,
         progress: @escaping @Sendable (ExportProgress) async -> Void
     ) async throws -> URL {
-        try await buildPackage(
+        try await buildPackageResult(
             for: workouts.map(WorkoutExportRequest.loaded),
             options: options,
             to: directory,
             progress: progress
-        )
+        ).url
     }
 
     func buildPackage(
