@@ -50,6 +50,38 @@ final class WorkoutExporterUITests: XCTestCase {
                 || app.otherElements["synchronized-route-map"]
                     .waitForExistence(timeout: 5)
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["chart-time-distance"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(
+            app.staticTexts[
+                "Touch and slide across the chart to inspect a time and map position."
+            ].exists
+        )
+        let heartRateChart = app.descendants(matching: .any)[
+            "heart-rate-chart"
+        ]
+        XCTAssertTrue(heartRateChart.waitForExistence(timeout: 5))
+        let chartFrameBeforeScrub = heartRateChart.frame
+        heartRateChart.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)
+        ).press(
+            forDuration: 0.1,
+            thenDragTo: heartRateChart.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+            )
+        )
+        XCTAssertEqual(
+            heartRateChart.frame.minY,
+            chartFrameBeforeScrub.minY,
+            accuracy: 1
+        )
+        XCTAssertEqual(
+            heartRateChart.frame.height,
+            chartFrameBeforeScrub.height,
+            accuracy: 1
+        )
 
         app.buttons["workout-export-button"].tap()
         XCTAssertTrue(app.navigationBars["Export"].waitForExistence(timeout: 3))

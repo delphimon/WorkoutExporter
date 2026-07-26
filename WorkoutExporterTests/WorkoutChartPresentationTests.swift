@@ -66,4 +66,48 @@ final class WorkoutChartPresentationTests: XCTestCase {
         XCTAssertEqual(selected.latitude, expected.latitude)
         XCTAssertEqual(selected.longitude, expected.longitude)
     }
+
+    func testChartDomainsAreFixedAndContainEveryDisplayedValue() throws {
+        let presentation = WorkoutChartPresentation(
+            detail: SyntheticWorkoutFactory.make(.veryLongWorkout)
+        )
+        let heartRateDomain = try XCTUnwrap(presentation.heartRateDomain)
+        let paceDomain = try XCTUnwrap(presentation.paceDomain)
+        let elevationDomain = try XCTUnwrap(presentation.elevationDomain)
+
+        XCTAssertTrue(
+            presentation.heartRateSamples.allSatisfy {
+                heartRateDomain.date.contains($0.startDate)
+                    && heartRateDomain.value.contains($0.value)
+            }
+        )
+        XCTAssertTrue(
+            presentation.pacePoints.allSatisfy {
+                guard let speed = $0.speedMetersPerSecond, speed > 0 else {
+                    return false
+                }
+                return paceDomain.date.contains($0.timestamp)
+                    && paceDomain.value.contains(1_000 / speed)
+            }
+        )
+        XCTAssertTrue(
+            presentation.elevationPoints.allSatisfy {
+                elevationDomain.date.contains($0.timestamp)
+                    && elevationDomain.value.contains($0.altitudeMeters)
+            }
+        )
+
+        let firstDate = try XCTUnwrap(
+            presentation.elevationPoints.first?.timestamp
+        )
+        let lastDate = try XCTUnwrap(
+            presentation.elevationPoints.last?.timestamp
+        )
+        _ = presentation.nearestElevationPoint(to: firstDate)
+        _ = presentation.nearestElevationPoint(to: lastDate)
+
+        XCTAssertEqual(presentation.heartRateDomain, heartRateDomain)
+        XCTAssertEqual(presentation.paceDomain, paceDomain)
+        XCTAssertEqual(presentation.elevationDomain, elevationDomain)
+    }
 }
