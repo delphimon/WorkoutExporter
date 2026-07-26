@@ -40,6 +40,20 @@ actor SyntheticHealthKitClient: HealthKitClient {
             .map { $0 }
     }
 
+    func fetchWorkoutRoutePreview(id: UUID) async throws -> WorkoutRoutePreview? {
+        guard let detail = details[id] else { throw WorkoutExporterError.noAccessibleData }
+        let segments = detail.routes
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+            .map { _, points in
+                points.map {
+                    WorkoutRouteCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+                }
+            }
+            .filter { !$0.isEmpty }
+        guard !segments.isEmpty else { return nil }
+        return WorkoutRoutePreview(workoutID: id, segments: segments)
+    }
+
     func fetchWorkoutDetail(
         id: UUID,
         settings: MetricCalculationSettings

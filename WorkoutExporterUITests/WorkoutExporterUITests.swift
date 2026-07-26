@@ -22,6 +22,12 @@ final class WorkoutExporterUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.navigationBars["Sample Workouts"].waitForExistence(timeout: 5))
+        let mappedWorkout = app.descendants(matching: .any)[
+            "workout-row-00000000-0000-0000-0000-000000000001"
+        ]
+        XCTAssertTrue(mappedWorkout.waitForExistence(timeout: 5))
+        XCTAssertTrue(mappedWorkout.label.contains("Running"))
+        XCTAssertTrue(mappedWorkout.label.contains("Workout route map preview"))
         app.buttons["workout-filter-button"].tap()
         XCTAssertTrue(app.navigationBars["Filters"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.switches["Has GPS route"].exists)

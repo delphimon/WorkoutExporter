@@ -6,6 +6,11 @@ actor LiveHealthKitClient: HealthKitClient {
     private let healthStore: HKHealthStore
     private let metricCalculator: WorkoutMetricCalculating
     private var routeAvailability: [UUID: Bool] = [:]
+    private var workoutsByID: [UUID: HKWorkout] = [:]
+    private var routePreviews: [UUID: WorkoutRoutePreview] = [:]
+    private var routePreviewMisses: Set<UUID> = []
+    private var routePreviewCacheOrder: [UUID] = []
+    private let maximumCachedRoutePreviews = 120
 
     nonisolated var isHealthDataAvailable: Bool {
         HKHealthStore.isHealthDataAvailable()
@@ -36,6 +41,9 @@ actor LiveHealthKitClient: HealthKitClient {
             )
             let workouts = try await descriptor.result(for: healthStore)
             guard !workouts.isEmpty else { throw WorkoutExporterError.noAccessibleData }
+            for workout in workouts {
+                workoutsByID[workout.uuid] = workout
+            }
             var summaries: [WorkoutSummary] = []
             summaries.reserveCapacity(workouts.count)
             for workout in workouts {
@@ -43,6 +51,71 @@ actor LiveHealthKitClient: HealthKitClient {
                 summaries.append(try await summary(for: workout))
             }
             return summaries
+        } catch let error as WorkoutExporterError {
+            throw error
+        } catch is CancellationError {
+            throw WorkoutExporterError.cancelled
+        } catch {
+            throw WorkoutExporterError.queryFailure(error.localizedDescription)
+        }
+    }
+
+    func fetchWorkoutRoutePreview(id: UUID) async throws -> WorkoutRoutePreview? {
+        if let cached = routePreviews[id] {
+            touchRoutePreviewCache(id)
+            return cached
+        }
+        if routePreviewMisses.contains(id) {
+            touchRoutePreviewCache(id)
+            return nil
+        }
+        do {
+            let workout: HKWorkout
+            if let cached = workoutsByID[id] {
+                workout = cached
+            } else {
+                let predicate = HKQuery.predicateForObject(with: id)
+                let descriptor = HKSampleQueryDescriptor<HKWorkout>(
+                    predicates: [.workout(predicate)],
+                    sortDescriptors: [],
+                    limit: 1
+                )
+                guard let fetched = try await descriptor.result(for: healthStore).first else {
+                    throw WorkoutExporterError.noAccessibleData
+                }
+                workoutsByID[id] = fetched
+                workout = fetched
+            }
+
+            let routes = try await routeSamples(for: workout)
+            var segments: [[WorkoutRouteCoordinate]] = []
+            segments.reserveCapacity(routes.count)
+            for route in routes {
+                try Task.checkCancellation()
+                var coordinates: [WorkoutRouteCoordinate] = []
+                for try await location in HKWorkoutRouteQueryDescriptor(route).results(for: healthStore) {
+                    try Task.checkCancellation()
+                    coordinates.append(WorkoutRouteCoordinate(
+                        latitude: location.coordinate.latitude,
+                        longitude: location.coordinate.longitude
+                    ))
+                }
+                if !coordinates.isEmpty {
+                    segments.append(coordinates)
+                }
+            }
+
+            guard !segments.isEmpty else {
+                routePreviewMisses.insert(id)
+                routeAvailability[id] = false
+                touchRoutePreviewCache(id)
+                return nil
+            }
+            let preview = WorkoutRoutePreview(workoutID: id, segments: segments)
+            routePreviews[id] = preview
+            routeAvailability[id] = true
+            touchRoutePreviewCache(id)
+            return preview
         } catch let error as WorkoutExporterError {
             throw error
         } catch is CancellationError {
@@ -70,6 +143,7 @@ actor LiveHealthKitClient: HealthKitClient {
             let (quantitySamples, quantityWarnings) = try await fetchQuantitySamples(for: workout)
             let (categories, categoryWarnings) = try await fetchCategorySamples(for: workout)
             let (routes, routeWarnings) = try await fetchRoutes(for: workout)
+            cacheRoutePreview(workoutID: id, routes: routes)
             let workoutSummary = try await summary(for: workout, knownRoutes: !routes.isEmpty)
             let events = (workout.workoutEvents ?? []).map {
                 WorkoutEvent(
@@ -166,6 +240,38 @@ actor LiveHealthKitClient: HealthKitClient {
     private func nativeElevationGain(for workout: HKWorkout) -> Double? {
         (workout.metadata?[HKMetadataKeyElevationAscended] as? HKQuantity)?
             .doubleValue(for: .meter())
+    }
+
+    private func cacheRoutePreview(workoutID: UUID, routes: [UUID: [RoutePoint]]) {
+        let segments = routes
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+            .map { _, points in
+                points.map {
+                    WorkoutRouteCoordinate(latitude: $0.latitude, longitude: $0.longitude)
+                }
+            }
+            .filter { !$0.isEmpty }
+        if segments.isEmpty {
+            routePreviewMisses.insert(workoutID)
+            routePreviews.removeValue(forKey: workoutID)
+        } else {
+            routePreviews[workoutID] = WorkoutRoutePreview(
+                workoutID: workoutID,
+                segments: segments
+            )
+            routePreviewMisses.remove(workoutID)
+        }
+        touchRoutePreviewCache(workoutID)
+    }
+
+    private func touchRoutePreviewCache(_ workoutID: UUID) {
+        routePreviewCacheOrder.removeAll { $0 == workoutID }
+        routePreviewCacheOrder.append(workoutID)
+        while routePreviewCacheOrder.count > maximumCachedRoutePreviews {
+            let evicted = routePreviewCacheOrder.removeFirst()
+            routePreviews.removeValue(forKey: evicted)
+            routePreviewMisses.remove(evicted)
+        }
     }
 
     private func fetchQuantitySamples(
