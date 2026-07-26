@@ -127,9 +127,39 @@ final class HeartRateZoneTests: XCTestCase {
             zones.map(\.rangeDescription),
             [
                 "< 114 bpm",
-                "114–< 133 bpm",
-                "≥ 172 bpm",
+                "114–132 bpm",
+                "172+ bpm",
             ])
+    }
+
+    func testZoneDurationDescriptionsMatchAppleStyle() {
+        XCTAssertEqual(
+            HeartRateZoneResult(
+                zone: 1,
+                lowerBoundBPM: 0,
+                upperBoundBPM: 100,
+                duration: 22_409
+            ).durationDescription,
+            "6:13:29"
+        )
+        XCTAssertEqual(
+            HeartRateZoneResult(
+                zone: 2,
+                lowerBoundBPM: 100,
+                upperBoundBPM: 120,
+                duration: 689
+            ).durationDescription,
+            "11:29"
+        )
+        XCTAssertEqual(
+            HeartRateZoneResult(
+                zone: 3,
+                lowerBoundBPM: 120,
+                upperBoundBPM: 140,
+                duration: 0
+            ).durationDescription,
+            "00:00"
+        )
     }
 
     func testCalculatedZoneBoundariesAreRoundedBeforeSamplesAreAssigned() async throws {
@@ -163,9 +193,6 @@ final class HeartRateZoneTests: XCTestCase {
         )
 
         let loaded = try XCTUnwrap(model.loadedDetail)
-        let estimate = try XCTUnwrap(model.maximumHeartRateEstimate)
-        XCTAssertEqual(estimate.ageYears, 40)
-        XCTAssertEqual(estimate.maximumHeartRateBPM, 180, accuracy: 0.001)
         XCTAssertEqual(
             loaded.metricSettings.heartRateZones.maximumHeartRateBPM,
             180,
@@ -190,7 +217,6 @@ final class HeartRateZoneTests: XCTestCase {
         )
 
         let loaded = try XCTUnwrap(model.loadedDetail)
-        XCTAssertNil(model.maximumHeartRateEstimate)
         XCTAssertEqual(
             loaded.metricSettings.heartRateZones.maximumHeartRateBPM,
             187
@@ -214,7 +240,6 @@ final class HeartRateZoneTests: XCTestCase {
         )
 
         let loaded = try XCTUnwrap(model.loadedDetail)
-        XCTAssertNil(model.maximumHeartRateEstimate)
         XCTAssertEqual(
             loaded.metricSettings.heartRateZones.maximumHeartRateBPM,
             187

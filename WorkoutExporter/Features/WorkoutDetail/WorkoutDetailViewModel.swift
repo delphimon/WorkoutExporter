@@ -12,7 +12,6 @@ final class WorkoutDetailViewModel {
 
     var state: State = .loading
     var chartPresentation: WorkoutChartPresentation?
-    var maximumHeartRateEstimate: AgeBasedMaximumHeartRateEstimate?
 
     func load(
         id: UUID,
@@ -22,7 +21,6 @@ final class WorkoutDetailViewModel {
     ) async {
         state = .loading
         chartPresentation = nil
-        maximumHeartRateEstimate = nil
         do {
             var effectiveSettings = settings
             let zoneSettings = settings.heartRateZones
@@ -35,7 +33,6 @@ final class WorkoutDetailViewModel {
                 ) {
                 effectiveSettings.heartRateZones.maximumHeartRateBPM =
                     estimate.maximumHeartRateBPM.rounded()
-                maximumHeartRateEstimate = estimate
             }
             let detail = try await client.fetchWorkoutDetail(
                 id: id,
