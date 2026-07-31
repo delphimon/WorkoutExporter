@@ -55,6 +55,7 @@ final class WorkoutListViewModel {
     private(set) var isLoadingMore = false
     private(set) var isLoadingAll = false
     private(set) var paginationError: String?
+    private(set) var loadedDataSourceIsSynthetic: Bool?
 
     var activityOptions: [String] {
         ["All"] + Set(workouts.map(\.activityName)).sorted()
@@ -154,6 +155,18 @@ final class WorkoutListViewModel {
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    func loadIfNeeded(
+        using client: any HealthKitClient,
+        isUsingSyntheticData: Bool
+    ) async {
+        guard state == .idle
+                || loadedDataSourceIsSynthetic != isUsingSyntheticData else {
+            return
+        }
+        loadedDataSourceIsSynthetic = isUsingSyntheticData
+        await load(using: client)
     }
 
     func loadMore(using client: any HealthKitClient) async {

@@ -54,6 +54,77 @@ final class WorkoutListViewModelTests: XCTestCase {
         XCTAssertFalse(model.canLoadMore)
     }
 
+    func testReturningToLoadedListDoesNotReloadOrResetPagination() async {
+        let workouts = (0..<120).map { index -> WorkoutSummary in
+            var summary = SyntheticWorkoutFactory.make(
+                .cleanOutdoorRun,
+                index: index
+            ).summary
+            summary.id = UUID()
+            return summary
+        }
+        let client = ListClient(workouts: workouts)
+        let model = WorkoutListViewModel()
+
+        await model.loadIfNeeded(
+            using: client,
+            isUsingSyntheticData: false
+        )
+        await model.loadMore(using: client)
+        XCTAssertEqual(model.workouts.count, 100)
+        XCTAssertEqual(model.requestedLimit, 100)
+        var requestedLimits = await client.requestedLimits()
+        XCTAssertEqual(requestedLimits, [50, 100])
+
+        await model.loadIfNeeded(
+            using: client,
+            isUsingSyntheticData: false
+        )
+
+        XCTAssertEqual(model.workouts.count, 100)
+        XCTAssertEqual(model.requestedLimit, 100)
+        requestedLimits = await client.requestedLimits()
+        XCTAssertEqual(requestedLimits, [50, 100])
+    }
+
+    func testChangingDataSourceStillPerformsFreshInitialLoad() async {
+        let liveClient = ListClient(
+            workouts: (0..<80).map {
+                SyntheticWorkoutFactory.make(
+                    .cleanOutdoorRun,
+                    index: $0
+                ).summary
+            }
+        )
+        let syntheticClient = ListClient(
+            workouts: (0..<15).map {
+                SyntheticWorkoutFactory.make(
+                    .cleanOutdoorRun,
+                    index: $0
+                ).summary
+            }
+        )
+        let model = WorkoutListViewModel()
+
+        await model.loadIfNeeded(
+            using: liveClient,
+            isUsingSyntheticData: false
+        )
+        await model.loadMore(using: liveClient)
+        XCTAssertEqual(model.requestedLimit, 100)
+
+        await model.loadIfNeeded(
+            using: syntheticClient,
+            isUsingSyntheticData: true
+        )
+
+        XCTAssertEqual(model.workouts.count, 15)
+        XCTAssertEqual(model.requestedLimit, 50)
+        XCTAssertEqual(model.loadedDataSourceIsSynthetic, true)
+        let requestedLimits = await syntheticClient.requestedLimits()
+        XCTAssertEqual(requestedLimits, [50])
+    }
+
     func testLoadMoreSearchesUntilAFilteredMatchOrActualEnd() async {
         let workouts = (0..<120).map { index -> WorkoutSummary in
             var summary = SyntheticWorkoutFactory.make(
