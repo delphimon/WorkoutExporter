@@ -154,6 +154,36 @@ final class WorkoutExporterUITests: XCTestCase {
     }
 
     @MainActor
+    func testRunningWorkoutOpensPaceChartWithoutCrashing() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        XCTAssertTrue(
+            app.navigationBars["Sample Workouts"].waitForExistence(timeout: 5)
+        )
+
+        let runningWorkout = app.descendants(matching: .any)[
+            "workout-row-00000000-0000-0000-0000-000000000001"
+        ]
+        XCTAssertTrue(runningWorkout.waitForExistence(timeout: 5))
+        runningWorkout.tap()
+        XCTAssertTrue(
+            app.buttons["detail-section-picker"].waitForExistence(timeout: 10)
+        )
+        app.buttons["detail-section-picker"].tap()
+        app.buttons["Pace"].tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["pace-chart"]
+                .waitForExistence(timeout: 10)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["chart-actual-time"]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
+    @MainActor
     func testMissingHeartRateState() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]

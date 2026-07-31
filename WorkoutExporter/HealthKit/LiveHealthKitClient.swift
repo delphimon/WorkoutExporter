@@ -176,7 +176,8 @@ actor LiveHealthKitClient: HealthKitClient {
                     metadata: HealthKitMappings.safeMetadata($0.metadata)
                 )
             }
-            var statistics = normalizedStatistics(workout.allStatistics)
+            let normalized = normalizedStatistics(workout.allStatistics)
+            var statistics = normalized.values
             if let elevation = nativeElevationGain(for: workout) {
                 statistics.append(NativeStatistic(
                     typeIdentifier: "HKMetadataKeyElevationAscended",
@@ -196,7 +197,11 @@ actor LiveHealthKitClient: HealthKitClient {
                 metadata: HealthKitMappings.safeMetadata(workout.metadata),
                 derived: .empty,
                 metricSettings: settings,
-                warnings: quantityWarnings + categoryWarnings + routeWarnings
+                warnings:
+                    quantityWarnings
+                    + categoryWarnings
+                    + routeWarnings
+                    + normalized.warnings
             )
             detail.derived = try await metricCalculator.calculate(detail: detail)
             detail.warnings.append(contentsOf: detail.derived.warnings)
@@ -427,9 +432,9 @@ actor LiveHealthKitClient: HealthKitClient {
 
     private func normalizedStatistics(
         _ statistics: [HKQuantityType: HKStatistics]
-    ) -> [NativeStatistic] {
-        statistics.flatMap { type, statistic -> [NativeStatistic] in
-            let unit = HealthKitMappings.unit(for: type)
+    ) -> (values: [NativeStatistic], warnings: [String]) {
+        var warnings = Set<String>()
+        let values = statistics.flatMap { type, statistic -> [NativeStatistic] in
             let values: [(String, HKQuantity?)] = [
                 ("sum", statistic.sumQuantity()),
                 ("average", statistic.averageQuantity()),
@@ -438,15 +443,26 @@ actor LiveHealthKitClient: HealthKitClient {
                 ("mostRecent", statistic.mostRecentQuantity())
             ]
             return values.compactMap { aggregation, quantity in
-                quantity.map {
-                    NativeStatistic(
-                        typeIdentifier: type.identifier,
-                        aggregation: aggregation,
-                        value: $0.doubleValue(for: unit),
-                        unit: unit.unitString
-                    )
+                guard let quantity,
+                      let unit = HealthKitMappings.compatibleUnit(
+                        for: type,
+                        quantity: quantity
+                      ) else {
+                    if quantity != nil {
+                        warnings.insert(
+                            "\(type.identifier) used an unsupported HealthKit unit and was omitted."
+                        )
+                    }
+                    return nil
                 }
+                return NativeStatistic(
+                    typeIdentifier: type.identifier,
+                    aggregation: aggregation,
+                    value: quantity.doubleValue(for: unit),
+                    unit: unit.unitString
+                )
             }
         }.sorted { $0.id < $1.id }
+        return (values, warnings.sorted())
     }
 }

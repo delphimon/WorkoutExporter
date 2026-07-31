@@ -710,10 +710,16 @@ private struct PaceSection: View {
                                     "Pace",
                                     displayPaceMinutes(
                                         secondsPerKilometer:
-                                            point.rawPaceSecondsPerKilometer ?? 0
+                                            point.paceSecondsPerKilometer
                                     )
+                                ),
+                                series: .value(
+                                    "Continuous route segment",
+                                    point.seriesID
                                 )
                             )
+                            .foregroundStyle(.blue)
+                            .interpolationMethod(.monotone)
                         }
                         if let selectedPoint {
                             RuleMark(
@@ -732,7 +738,7 @@ private struct PaceSection: View {
                                     "Pace",
                                     displayPaceMinutes(
                                         secondsPerKilometer:
-                                            selectedPoint.rawPaceSecondsPerKilometer ?? 0
+                                            selectedPoint.paceSecondsPerKilometer
                                     )
                                 )
                             )
@@ -754,14 +760,14 @@ private struct PaceSection: View {
                                 proxy.position(
                                     forY: displayPaceMinutes(
                                         secondsPerKilometer:
-                                            $0.rawPaceSecondsPerKilometer ?? 0
+                                            $0.paceSecondsPerKilometer
                                     )
                                 )
                             },
                             text: selectedPoint.map {
                                 selectedPace(
                                     secondsPerKilometer:
-                                        $0.rawPaceSecondsPerKilometer
+                                        $0.paceSecondsPerKilometer
                                 )
                             }
                         )
