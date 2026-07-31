@@ -191,8 +191,15 @@ private struct SummarySection: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Data Notes", systemImage: "info.circle")
                     .font(.headline)
-                ForEach(Array(Set(detail.warnings)).sorted(), id: \.self) {
-                    Text($0).font(.footnote).foregroundStyle(.secondary)
+                ForEach(Array(Set(detail.warnings)).sorted(), id: \.self) { warning in
+                    Text(warning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier(
+                            warning.contains("not explicitly associated with this workout")
+                                ? "time-matched-heart-rate-note"
+                                : "workout-data-note"
+                        )
                 }
             }
             .padding()

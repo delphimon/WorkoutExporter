@@ -151,6 +151,24 @@ final class WorkoutExporterUITests: XCTestCase {
         app.buttons["detail-section-picker"].tap()
         app.buttons["Map"].tap()
         XCTAssertTrue(app.staticTexts["No GPS Route"].waitForExistence(timeout: 10))
+        app.buttons["detail-section-picker"].tap()
+        app.buttons["Heart Rate"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["heart-rate-chart"]
+                .waitForExistence(timeout: 10)
+        )
+        app.buttons["detail-section-picker"].tap()
+        app.buttons["Summary"].tap()
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "label MATCHES %@", "[0-9]+ bpm")
+            ).firstMatch.waitForExistence(timeout: 5)
+        )
+        app.swipeUp()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["time-matched-heart-rate-note"]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     @MainActor
