@@ -54,6 +54,10 @@ final class WorkoutExporterUITests: XCTestCase {
             app.descendants(matching: .any)["chart-time-distance"]
                 .waitForExistence(timeout: 5)
         )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["chart-actual-time"]
+                .waitForExistence(timeout: 5)
+        )
         XCTAssertFalse(
             app.staticTexts[
                 "Touch and slide across the chart to inspect a time and map position."

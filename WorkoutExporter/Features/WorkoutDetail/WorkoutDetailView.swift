@@ -316,17 +316,29 @@ private struct SynchronizedRouteContext: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
         }
 
-        HStack {
-            Label(elapsedTime(for: displayedDate), systemImage: "clock")
-            Spacer()
+        HStack(spacing: 8) {
+            Label(elapsedTime(for: displayedDate), systemImage: "timer")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("chart-elapsed-time")
+            Label(actualTime(for: displayedDate), systemImage: "clock")
+                .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("chart-actual-time")
             Label(
                 selectedDistance(for: displayedDate),
                 systemImage: "arrow.left.and.right"
             )
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("chart-distance")
         }
-        .font(.subheadline.monospacedDigit())
+        .font(.caption.monospacedDigit())
         .foregroundStyle(.secondary)
         .frame(height: 24)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chart-time-distance")
     }
 
@@ -339,6 +351,16 @@ private struct SynchronizedRouteContext: View {
             min(
                 detail.summary.duration,
                 max(0, date.timeIntervalSince(detail.summary.startDate))
+            )
+        )
+    }
+
+    private func actualTime(for date: Date) -> String {
+        date.formatted(
+            Date.FormatStyle(
+                date: .omitted,
+                time: .standard,
+                timeZone: detail.activityTimeZone
             )
         )
     }
@@ -687,7 +709,8 @@ private struct PaceSection: View {
                                 y: .value(
                                     "Pace",
                                     displayPaceMinutes(
-                                        point.speedMetersPerSecond
+                                        secondsPerKilometer:
+                                            point.rawPaceSecondsPerKilometer ?? 0
                                     )
                                 )
                             )
@@ -708,7 +731,8 @@ private struct PaceSection: View {
                                 y: .value(
                                     "Pace",
                                     displayPaceMinutes(
-                                        selectedPoint.speedMetersPerSecond
+                                        secondsPerKilometer:
+                                            selectedPoint.rawPaceSecondsPerKilometer ?? 0
                                     )
                                 )
                             )
@@ -729,14 +753,15 @@ private struct PaceSection: View {
                             yPosition: selectedPoint.flatMap {
                                 proxy.position(
                                     forY: displayPaceMinutes(
-                                        $0.speedMetersPerSecond
+                                        secondsPerKilometer:
+                                            $0.rawPaceSecondsPerKilometer ?? 0
                                     )
                                 )
                             },
                             text: selectedPoint.map {
                                 selectedPace(
-                                    speedMetersPerSecond:
-                                        $0.speedMetersPerSecond
+                                    secondsPerKilometer:
+                                        $0.rawPaceSecondsPerKilometer
                                 )
                             }
                         )
@@ -788,13 +813,6 @@ private struct PaceSection: View {
         )
     }
 
-    private func displayPaceMinutes(_ metersPerSecond: Double?) -> Double {
-        guard let metersPerSecond, metersPerSecond > 0 else { return 0 }
-        return displayPaceMinutes(
-            secondsPerKilometer: 1_000 / metersPerSecond
-        )
-    }
-
     private func displayPaceMinutes(
         secondsPerKilometer: Double
     ) -> Double {
@@ -816,12 +834,9 @@ private struct PaceSection: View {
         return lowerBound...upperBound
     }
 
-    private func selectedPace(speedMetersPerSecond: Double?) -> String {
-        guard let speedMetersPerSecond, speedMetersPerSecond > 0 else {
-            return "—"
-        }
+    private func selectedPace(secondsPerKilometer: Double?) -> String {
         return MeasurementFormatterFactory.pace(
-            secondsPerKilometer: 1_000 / speedMetersPerSecond,
+            secondsPerKilometer: secondsPerKilometer,
             preference: units
         )
     }
@@ -947,7 +962,13 @@ private struct SplitsSection: View {
                 HStack {
                     Text("\(split.index)").font(.headline).frame(width: 30)
                     VStack(alignment: .leading) {
-                        Text(MeasurementFormatterFactory.distance(split.distanceMeters, preference: units))
+                        Text(
+                            MeasurementFormatterFactory.splitDistance(
+                                actualMeters: split.distanceMeters,
+                                configuredDistanceMeters: configuredSplitDistance,
+                                preference: units
+                            )
+                        )
                         Text(MeasurementFormatterFactory.duration(split.elapsedTime))
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -960,6 +981,12 @@ private struct SplitsSection: View {
             }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private var configuredSplitDistance: Double? {
+        detail.metricSettings.splitMode == .distance
+            ? detail.metricSettings.splitDistanceMeters
+            : nil
     }
 }
 

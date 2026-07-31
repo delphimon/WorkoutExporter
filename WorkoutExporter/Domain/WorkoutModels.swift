@@ -394,6 +394,23 @@ struct WorkoutDetail: Identifiable, Codable, Hashable, Sendable {
     var heartRateSamples: [WorkoutSample] {
         samples.filter { $0.typeIdentifier == "HKQuantityTypeIdentifierHeartRate" }
     }
+
+    var activityTimeZone: TimeZone {
+        let preferredKeys = ["HKTimeZone", "timeZoneIdentifier"]
+        for key in preferredKeys {
+            if let identifier = metadata[key],
+               let timeZone = TimeZone(identifier: identifier) {
+                return timeZone
+            }
+        }
+        if let identifier = metadata.first(where: {
+            $0.key.localizedCaseInsensitiveContains("timezone")
+        })?.value,
+           let timeZone = TimeZone(identifier: identifier) {
+            return timeZone
+        }
+        return .current
+    }
 }
 
 extension WorkoutDetail {
