@@ -23,6 +23,17 @@ enum DistanceUnitPreference: String, CaseIterable, Codable, Sendable {
     }
 
     var distanceSliderStep: Double { 0.1 }
+
+    func normalizingLegacySplitDistance(_ meters: Double) -> Double {
+        guard self == .usCustomary else { return meters }
+        let displayedMiles = distanceValue(fromMeters: meters)
+        let nearestSliderValue =
+            (displayedMiles / distanceSliderStep).rounded() * distanceSliderStep
+        guard abs(displayedMiles - nearestSliderValue) < 0.01 else {
+            return meters
+        }
+        return self.meters(fromDistanceValue: nearestSliderValue)
+    }
 }
 
 enum ExportFilenameFormat: String, CaseIterable, Codable, Sendable {
@@ -55,6 +66,21 @@ struct MeasurementFormatterFactory {
         return measurement.formatted(
             .measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(0...2)))
         )
+    }
+
+    static func splitDistance(
+        actualMeters: Double,
+        configuredDistanceMeters: Double?,
+        preference: DistanceUnitPreference
+    ) -> String {
+        let displayedMeters: Double
+        if let configuredDistanceMeters,
+           actualMeters >= configuredDistanceMeters {
+            displayedMeters = configuredDistanceMeters
+        } else {
+            displayedMeters = actualMeters
+        }
+        return distance(displayedMeters, preference: preference)
     }
 
     static func duration(_ seconds: TimeInterval) -> String {

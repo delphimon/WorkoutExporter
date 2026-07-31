@@ -7,7 +7,7 @@ struct WorkoutChartPresentation: Sendable {
     let routePoints: [RoutePoint]
     let routeMetrics: [RouteMetricPoint]
     let heartRateSamples: [WorkoutSample]
-    let pacePoints: [RoutePoint]
+    let pacePoints: [RouteMetricPoint]
     let elevationPoints: [RoutePoint]
     let heartRateDomain: WorkoutChartDomain?
     let paceDomain: WorkoutChartDomain?
@@ -29,8 +29,12 @@ struct WorkoutChartPresentation: Sendable {
         let sortedHeartRate = detail.samples
             .filter { $0.typeIdentifier == "HKQuantityTypeIdentifierHeartRate" }
             .sorted { $0.startDate < $1.startDate }
-        let movingRoutePoints = sortedRoutePoints.filter {
-            ($0.speedMetersPerSecond ?? 0) > 0
+        let movingRouteMetrics = sortedRouteMetrics.filter {
+            guard let speed = $0.derivedSpeedMetersPerSecond else {
+                return false
+            }
+            return speed >= detail.metricSettings.movingSpeedThresholdMetersPerSecond
+                && speed <= detail.metricSettings.maximumPlausibleSpeedMetersPerSecond
         }
         let routeCount = max(1, detail.routes.count)
         let perRouteLimit = max(2, Self.mapPointLimit / routeCount)
@@ -40,9 +44,9 @@ struct WorkoutChartPresentation: Sendable {
             value: \.value
         )
         let displayedPace = Self.downsampleChart(
-            movingRoutePoints,
+            movingRouteMetrics,
             limit: Self.chartPointLimit,
-            value: { $0.speedMetersPerSecond ?? 0 }
+            value: { $0.rawPaceSecondsPerKilometer ?? 0 }
         )
         let displayedElevation = Self.downsampleChart(
             sortedRoutePoints,
@@ -64,12 +68,7 @@ struct WorkoutChartPresentation: Sendable {
         paceDomain = WorkoutChartDomain(
             points: displayedPace,
             date: \.timestamp,
-            value: {
-                guard let speed = $0.speedMetersPerSecond, speed > 0 else {
-                    return 0
-                }
-                return 1_000 / speed
-            },
+            value: { $0.rawPaceSecondsPerKilometer ?? 0 },
             minimumValuePadding: 5
         )
         elevationDomain = WorkoutChartDomain(
@@ -110,7 +109,7 @@ struct WorkoutChartPresentation: Sendable {
         Self.nearest(in: heartRateSamples, to: date, date: \.startDate)
     }
 
-    func nearestPacePoint(to date: Date) -> RoutePoint? {
+    func nearestPacePoint(to date: Date) -> RouteMetricPoint? {
         Self.nearest(in: pacePoints, to: date, date: \.timestamp)
     }
 

@@ -44,6 +44,65 @@ final class UnitPreferenceTests: XCTestCase {
         XCTAssertEqual(DistanceUnitPreference.usCustomary.distanceSliderStep, 0.1)
     }
 
+    func testLegacyMetricSteppedMileSplitNormalizesToExactMile() {
+        XCTAssertEqual(
+            DistanceUnitPreference.usCustomary
+                .normalizingLegacySplitDistance(1_600),
+            1_609.344,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            DistanceUnitPreference.metric
+                .normalizingLegacySplitDistance(1_600),
+            1_600,
+            accuracy: 0.000_1
+        )
+    }
+
+    func testCompleteSplitUsesConfiguredUnitLabelAndPartialSplitKeepsActualDistance() {
+        let configuredMile = 1_609.344
+        let complete = MeasurementFormatterFactory.splitDistance(
+            actualMeters: configuredMile + 4,
+            configuredDistanceMeters: configuredMile,
+            preference: .usCustomary
+        )
+        XCTAssertTrue(complete.contains("1"))
+        XCTAssertTrue(complete.contains("mi"))
+        XCTAssertFalse(complete.contains("0.99"))
+        XCTAssertTrue(
+            MeasurementFormatterFactory.splitDistance(
+                actualMeters: configuredMile / 2,
+                configuredDistanceMeters: configuredMile,
+                preference: .usCustomary
+            ).contains("0.5")
+        )
+    }
+
+    @MainActor
+    func testUserSettingsMigratesLegacyMileSplitOnLoad() throws {
+        let suiteName = "UnitPreferenceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            DistanceUnitPreference.usCustomary.rawValue,
+            forKey: "distanceUnits"
+        )
+        var metricSettings = MetricCalculationSettings()
+        metricSettings.splitDistanceMeters = 1_600
+        defaults.set(
+            try JSONEncoder().encode(metricSettings),
+            forKey: "metricSettings"
+        )
+
+        let settings = UserSettings(defaults: defaults)
+
+        XCTAssertEqual(
+            settings.metricSettings.splitDistanceMeters,
+            1_609.344,
+            accuracy: 0.000_1
+        )
+    }
+
     func testExportOptionsAndFilenamePreferencesRoundTrip() throws {
         var options = ExportOptions()
         options.filenameFormat = .activityDateIdentifier

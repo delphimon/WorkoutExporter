@@ -2,8 +2,8 @@ import XCTest
 @testable import WorkoutExporter
 
 final class WorkoutChartPresentationTests: XCTestCase {
-    func testLongWorkoutUsesBoundedDisplaySeriesWithoutChangingSourceData() throws {
-        let detail = SyntheticWorkoutFactory.make(.veryLongWorkout)
+    func testLongWorkoutUsesBoundedDisplaySeriesWithoutChangingSourceData() async throws {
+        let detail = try await calculatedDetail(.veryLongWorkout)
         let originalRoute = try XCTUnwrap(detail.routes.values.first)
         let originalHeartRate = detail.heartRateSamples
 
@@ -51,8 +51,8 @@ final class WorkoutChartPresentationTests: XCTestCase {
         XCTAssertEqual(detail.heartRateSamples, originalHeartRate)
     }
 
-    func testNearestPointLookupReturnsOriginalSampleAtSelectedTime() throws {
-        let detail = SyntheticWorkoutFactory.make(.veryLongWorkout)
+    func testNearestPointLookupReturnsOriginalSampleAtSelectedTime() async throws {
+        let detail = try await calculatedDetail(.veryLongWorkout)
         let originalRoute = try XCTUnwrap(detail.routes.values.first)
         let presentation = WorkoutChartPresentation(detail: detail)
         let expected = originalRoute[7_500]
@@ -67,9 +67,9 @@ final class WorkoutChartPresentationTests: XCTestCase {
         XCTAssertEqual(selected.longitude, expected.longitude)
     }
 
-    func testChartDomainsAreFixedAndContainEveryDisplayedValue() throws {
+    func testChartDomainsAreFixedAndContainEveryDisplayedValue() async throws {
         let presentation = WorkoutChartPresentation(
-            detail: SyntheticWorkoutFactory.make(.veryLongWorkout)
+            detail: try await calculatedDetail(.veryLongWorkout)
         )
         let heartRateDomain = try XCTUnwrap(presentation.heartRateDomain)
         let paceDomain = try XCTUnwrap(presentation.paceDomain)
@@ -83,11 +83,11 @@ final class WorkoutChartPresentationTests: XCTestCase {
         )
         XCTAssertTrue(
             presentation.pacePoints.allSatisfy {
-                guard let speed = $0.speedMetersPerSecond, speed > 0 else {
+                guard let pace = $0.rawPaceSecondsPerKilometer else {
                     return false
                 }
                 return paceDomain.date.contains($0.timestamp)
-                    && paceDomain.value.contains(1_000 / speed)
+                    && paceDomain.value.contains(pace)
             }
         )
         XCTAssertTrue(
@@ -109,5 +109,61 @@ final class WorkoutChartPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.heartRateDomain, heartRateDomain)
         XCTAssertEqual(presentation.paceDomain, paceDomain)
         XCTAssertEqual(presentation.elevationDomain, elevationDomain)
+    }
+
+    func testPacePresentationExcludesBelowThresholdArtifactsWithoutChangingRoute() async throws {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        let routeID = try XCTUnwrap(detail.routes.keys.first)
+        var route = try XCTUnwrap(detail.routes[routeID])
+        route[80].latitude = route[79].latitude + 0.000_000_000_001
+        route[80].longitude = route[79].longitude + 0.000_000_000_001
+        let artifactPoint = route[80]
+        detail.routes[routeID] = route
+        detail.derived = try await WorkoutMetricCalculator().calculate(detail: detail)
+
+        let artifactMetric = try XCTUnwrap(
+            detail.derived.routeMetrics?.first {
+                $0.routePointID == artifactPoint.id
+            }
+        )
+        XCTAssertGreaterThan(
+            try XCTUnwrap(artifactMetric.rawPaceSecondsPerKilometer),
+            1_000_000
+        )
+
+        let presentation = WorkoutChartPresentation(detail: detail)
+
+        XCTAssertFalse(
+            presentation.pacePoints.contains {
+                $0.routePointID == artifactPoint.id
+            }
+        )
+        XCTAssertTrue(
+            presentation.pacePoints.allSatisfy {
+                ($0.derivedSpeedMetersPerSecond ?? 0)
+                    >= detail.metricSettings.movingSpeedThresholdMetersPerSecond
+            }
+        )
+        XCTAssertEqual(detail.routes[routeID]?[80], artifactPoint)
+    }
+
+    func testActivityTimeZoneUsesRecordedWorkoutMetadata() {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.metadata["HKTimeZone"] = "America/Los_Angeles"
+
+        XCTAssertEqual(
+            detail.activityTimeZone.identifier,
+            "America/Los_Angeles"
+        )
+    }
+
+    private func calculatedDetail(
+        _ scenario: SyntheticWorkoutScenario
+    ) async throws -> WorkoutDetail {
+        var detail = SyntheticWorkoutFactory.make(scenario)
+        detail.derived = try await WorkoutMetricCalculator().calculate(
+            detail: detail
+        )
+        return detail
     }
 }

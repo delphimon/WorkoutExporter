@@ -5,7 +5,13 @@ import Observation
 @Observable
 final class UserSettings {
     var distanceUnits: DistanceUnitPreference {
-        didSet { defaults.set(distanceUnits.rawValue, forKey: Keys.distanceUnits) }
+        didSet {
+            defaults.set(distanceUnits.rawValue, forKey: Keys.distanceUnits)
+            metricSettings.splitDistanceMeters =
+                distanceUnits.normalizingLegacySplitDistance(
+                    metricSettings.splitDistanceMeters
+                )
+        }
     }
     var metricSettings: MetricCalculationSettings
     var filenameFormat: ExportFilenameFormat
@@ -37,6 +43,10 @@ final class UserSettings {
         } else {
             metricSettings = .conservativeDefault
         }
+        metricSettings.splitDistanceMeters =
+            distanceUnits.normalizingLegacySplitDistance(
+                metricSettings.splitDistanceMeters
+            )
     }
 
     func persist() {
