@@ -46,8 +46,13 @@ final class AppEnvironment {
         #if DEBUG
         if arguments.contains("--ui-testing")
             || arguments.contains("--ui-testing-onboarding")
-            || arguments.contains("--ui-testing-export-error") {
-            healthClient = SyntheticHealthKitClient()
+            || arguments.contains("--ui-testing-export-error")
+            || arguments.contains("--ui-testing-pagination") {
+            healthClient = arguments.contains("--ui-testing-pagination")
+                ? SyntheticHealthKitClient(
+                    workouts: SyntheticWorkoutFactory.makePaginated(count: 120)
+                )
+                : SyntheticHealthKitClient()
             isUsingSyntheticData = true
             UserDefaults.standard.set(
                 !arguments.contains("--ui-testing-onboarding"),

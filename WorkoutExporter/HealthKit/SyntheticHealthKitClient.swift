@@ -24,10 +24,15 @@ actor SyntheticHealthKitClient: HealthKitClient {
     private let details: [UUID: WorkoutDetail]
     private let metricCalculator: WorkoutMetricCalculating
 
-    init(metricCalculator: WorkoutMetricCalculating = WorkoutMetricCalculator()) {
+    init(
+        metricCalculator: WorkoutMetricCalculating = WorkoutMetricCalculator(),
+        workouts: [WorkoutDetail]? = nil
+    ) {
         self.metricCalculator = metricCalculator
-        let workouts = SyntheticWorkoutFactory.makeAll()
-        details = Dictionary(uniqueKeysWithValues: workouts.map { ($0.id, $0) })
+        let resolvedWorkouts = workouts ?? SyntheticWorkoutFactory.makeAll()
+        details = Dictionary(
+            uniqueKeysWithValues: resolvedWorkouts.map { ($0.id, $0) }
+        )
     }
 
     func requestReadAuthorization() async throws {}
@@ -80,6 +85,12 @@ enum SyntheticWorkoutFactory {
     static func makeAll() -> [WorkoutDetail] {
         SyntheticWorkoutScenario.allCases.enumerated().map { index, scenario in
             make(scenario, index: index)
+        }
+    }
+
+    static func makePaginated(count: Int) -> [WorkoutDetail] {
+        (0..<count).map {
+            make(.cleanOutdoorRun, index: $0)
         }
     }
 

@@ -202,6 +202,43 @@ final class WorkoutExporterUITests: XCTestCase {
     }
 
     @MainActor
+    func testListPositionAndLoadedPagesSurviveDetailNavigation() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-pagination"]
+        app.launch()
+        XCTAssertTrue(
+            app.navigationBars["Sample Workouts"].waitForExistence(timeout: 5)
+        )
+
+        let list = app.collectionViews.firstMatch
+        let loadMore = app.buttons["load-more-workouts-button"]
+        XCTAssertTrue(
+            scrollUntilHittable(loadMore, in: list, maximumSwipes: 20)
+        )
+        loadMore.tap()
+
+        let targetID = "00000000-0000-0000-0000-000000000075"
+        let target = app.descendants(matching: .any)[
+            "workout-row-\(targetID)"
+        ]
+        XCTAssertTrue(
+            scrollUntilHittable(target, in: list, maximumSwipes: 30)
+        )
+        target.tap()
+        XCTAssertTrue(
+            app.buttons["detail-section-picker"].waitForExistence(timeout: 10)
+        )
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        XCTAssertTrue(
+            app.navigationBars["Sample Workouts"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        XCTAssertTrue(target.isHittable)
+    }
+
+    @MainActor
     func testMissingHeartRateState() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
@@ -318,5 +355,20 @@ final class WorkoutExporterUITests: XCTestCase {
     private func scrollExportFormToBottom(in app: XCUIApplication) {
         let form = app.collectionViews["export-form"]
         for _ in 0..<4 { form.swipeUp() }
+    }
+
+    @MainActor
+    private func scrollUntilHittable(
+        _ element: XCUIElement,
+        in list: XCUIElement,
+        maximumSwipes: Int
+    ) -> Bool {
+        for _ in 0..<maximumSwipes {
+            if element.exists, element.isHittable {
+                return true
+            }
+            list.swipeUp()
+        }
+        return element.exists && element.isHittable
     }
 }

@@ -95,7 +95,10 @@ struct WorkoutListView: View {
         .refreshable { await model.load(using: environment.healthClient) }
         .task(id: environment.isUsingSyntheticData) {
             syncMetadata()
-            await model.load(using: environment.healthClient)
+            await model.loadIfNeeded(
+                using: environment.healthClient,
+                isUsingSyntheticData: environment.isUsingSyntheticData
+            )
         }
         .onAppear {
             syncMetadata()
