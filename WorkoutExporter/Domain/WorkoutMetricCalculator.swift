@@ -39,6 +39,10 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
         let nativeMaximumSpeed = nativeStatistic(in: detail, matching: "Speed", aggregation: "maximum")
         let altitudes = groups.flatMap { $0.map(\.altitudeMeters) }.filter(\.isFinite)
         let heartRates = detail.heartRateSamples.map(\.value).filter { $0.isFinite && $0 > 0 }
+        let heartRateSampleProvenance: DataProvenance =
+            detail.heartRateSamples.contains {
+                $0.provenance == .healthKitTimeMatchedSample
+            } ? .healthKitTimeMatchedSample : .healthKitSample
         let elevation = elevationMetrics(segments: validSegments)
 
         if groups.isEmpty {
@@ -66,9 +70,15 @@ struct WorkoutMetricCalculator: WorkoutMetricCalculating {
             maximumAltitudeMeters: altitudes.max().map { metric($0, unit: "m", .location) },
             averageHeartRateBPM: detail.summary.averageHeartRateBPM.map {
                 metric($0, unit: "count/min", .healthKitStatistic)
-            } ?? average(heartRates).map { metric($0, unit: "count/min", .healthKitSample) },
-            minimumHeartRateBPM: heartRates.min().map { metric($0, unit: "count/min", .healthKitSample) },
-            maximumHeartRateBPM: heartRates.max().map { metric($0, unit: "count/min", .healthKitSample) },
+            } ?? average(heartRates).map {
+                metric($0, unit: "count/min", heartRateSampleProvenance)
+            },
+            minimumHeartRateBPM: heartRates.min().map {
+                metric($0, unit: "count/min", heartRateSampleProvenance)
+            },
+            maximumHeartRateBPM: heartRates.max().map {
+                metric($0, unit: "count/min", heartRateSampleProvenance)
+            },
             routeMetrics: routeMetrics,
             heartRateZones: makeHeartRateZones(
                 samples: detail.heartRateSamples,

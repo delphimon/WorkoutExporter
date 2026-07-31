@@ -3,6 +3,101 @@ import XCTest
 @testable import WorkoutExporter
 
 final class MetricEngineTests: XCTestCase {
+    func testHeartRateUsesTimeFallbackOnlyWhenWorkoutAssociationIsEmpty() throws {
+        let heartRate = try XCTUnwrap(
+            HKObjectType.quantityType(forIdentifier: .heartRate)
+        )
+        let distance = try XCTUnwrap(
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)
+        )
+
+        XCTAssertTrue(
+            WorkoutSampleQueryPolicy.shouldUseTimeIntervalFallback(
+                for: heartRate,
+                associatedSampleCount: 0
+            )
+        )
+        XCTAssertFalse(
+            WorkoutSampleQueryPolicy.shouldUseTimeIntervalFallback(
+                for: heartRate,
+                associatedSampleCount: 1
+            )
+        )
+        XCTAssertFalse(
+            WorkoutSampleQueryPolicy.shouldUseTimeIntervalFallback(
+                for: distance,
+                associatedSampleCount: 0
+            )
+        )
+    }
+
+    func testTimeFallbackStrictlyExcludesSamplesOutsideWorkoutBoundaries() {
+        let workoutStart = Date(timeIntervalSinceReferenceDate: 10_000)
+        let workoutEnd = workoutStart.addingTimeInterval(600)
+
+        XCTAssertTrue(
+            WorkoutSampleQueryPolicy.isStrictlyWithinWorkout(
+                sampleStart: workoutStart,
+                sampleEnd: workoutStart.addingTimeInterval(1),
+                workoutStart: workoutStart,
+                workoutEnd: workoutEnd
+            )
+        )
+        XCTAssertFalse(
+            WorkoutSampleQueryPolicy.isStrictlyWithinWorkout(
+                sampleStart: workoutStart.addingTimeInterval(-1),
+                sampleEnd: workoutStart,
+                workoutStart: workoutStart,
+                workoutEnd: workoutEnd
+            )
+        )
+        XCTAssertFalse(
+            WorkoutSampleQueryPolicy.isStrictlyWithinWorkout(
+                sampleStart: workoutEnd.addingTimeInterval(-1),
+                sampleEnd: workoutEnd,
+                workoutStart: workoutStart,
+                workoutEnd: workoutEnd
+            )
+        )
+        XCTAssertFalse(
+            WorkoutSampleQueryPolicy.isStrictlyWithinWorkout(
+                sampleStart: workoutEnd,
+                sampleEnd: workoutEnd,
+                workoutStart: workoutStart,
+                workoutEnd: workoutEnd
+            )
+        )
+    }
+
+    func testTimeMatchedHeartRateHasExplicitExportableProvenance() {
+        XCTAssertEqual(
+            DataProvenance.healthKitTimeMatchedSample.rawValue,
+            "healthKitTimeMatchedSample"
+        )
+    }
+
+    func testTimeMatchedHeartRateDerivedMetricsPreserveProvenance() async throws {
+        let detail = SyntheticWorkoutFactory.make(.noRoute)
+
+        let metrics = try await WorkoutMetricCalculator().calculate(
+            detail: detail
+        )
+
+        XCTAssertNil(detail.summary.averageHeartRateBPM)
+        XCTAssertEqual(
+            metrics.averageHeartRateBPM?.provenance,
+            .healthKitTimeMatchedSample
+        )
+        XCTAssertEqual(
+            metrics.minimumHeartRateBPM?.provenance,
+            .healthKitTimeMatchedSample
+        )
+        XCTAssertEqual(
+            metrics.maximumHeartRateBPM?.provenance,
+            .healthKitTimeMatchedSample
+        )
+    }
+
     func testRunningGroundContactTimeUsesCompatibleMillisecondUnit() throws {
         let type = try XCTUnwrap(
             HKObjectType.quantityType(

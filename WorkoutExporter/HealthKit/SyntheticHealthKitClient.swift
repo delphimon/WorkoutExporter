@@ -148,13 +148,18 @@ enum SyntheticWorkoutFactory {
             }
         }
 
-        let heartRate = scenario == .noHeartRate ? [] : makeHeartRate(
+        var heartRate = scenario == .noHeartRate ? [] : makeHeartRate(
             start: start,
             duration: duration,
             source: source,
             device: device,
             intervalValued: scenario == .intervalHeartRate
         )
+        if scenario == .noRoute {
+            for index in heartRate.indices {
+                heartRate[index].provenance = .healthKitTimeMatchedSample
+            }
+        }
         let events: [WorkoutEvent] = [.walkWithAutoPause, .hikeWithStops].contains(scenario)
             ? [
                 WorkoutEvent(id: UUID(), kind: .pause, startDate: start.addingTimeInterval(1_200), endDate: nil, metadata: ["synthetic": "true"]),
@@ -191,7 +196,10 @@ enum SyntheticWorkoutFactory {
             totalDistanceMeters: route.isEmpty ? nil : healthDistance,
             elevationGainMeters: route.isEmpty ? nil : (scenario == .hikeWithStops ? 420 : 35),
             activeEnergyKilocalories: 540,
-            averageHeartRateBPM: heartRate.isEmpty ? nil : 146,
+            averageHeartRateBPM:
+                heartRate.isEmpty || scenario == .noRoute
+                ? nil
+                : 146,
             source: source,
             device: device,
             hasRoute: !route.isEmpty,
@@ -213,15 +221,31 @@ enum SyntheticWorkoutFactory {
         if scenario == .crossingMidnight {
             warnings.append("Synthetic fixture crosses local midnight.")
         }
+        if scenario == .noRoute, !heartRate.isEmpty {
+            warnings.append(
+                "Heart-rate samples were not explicitly associated with this workout; "
+                    + "\(heartRate.count) samples were matched strictly to its time interval."
+            )
+        }
+        var statistics = [
+            NativeStatistic(typeIdentifier: "HKQuantityTypeIdentifierDistanceWalkingRunning", aggregation: "sum", value: healthDistance, unit: "m"),
+            NativeStatistic(typeIdentifier: "HKMetadataKeyElevationAscended", aggregation: "metadata", value: scenario == .hikeWithStops ? 420 : 35, unit: "m")
+        ]
+        if scenario != .noRoute {
+            statistics.append(
+                NativeStatistic(
+                    typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+                    aggregation: "average",
+                    value: 146,
+                    unit: "count/min"
+                )
+            )
+        }
         return WorkoutDetail(
             summary: summary,
             events: events,
             activities: activities,
-            statistics: [
-                NativeStatistic(typeIdentifier: "HKQuantityTypeIdentifierDistanceWalkingRunning", aggregation: "sum", value: healthDistance, unit: "m"),
-                NativeStatistic(typeIdentifier: "HKMetadataKeyElevationAscended", aggregation: "metadata", value: scenario == .hikeWithStops ? 420 : 35, unit: "m"),
-                NativeStatistic(typeIdentifier: "HKQuantityTypeIdentifierHeartRate", aggregation: "average", value: 146, unit: "count/min")
-            ],
+            statistics: statistics,
             samples: heartRate,
             categorySamples: [],
             routes: routes,

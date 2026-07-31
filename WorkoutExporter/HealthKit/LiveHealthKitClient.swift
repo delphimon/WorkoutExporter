@@ -156,7 +156,10 @@ actor LiveHealthKitClient: HealthKitClient {
                 (routes, routeWarnings)
             ) = try await (quantityResult, categoryResult, routeResult)
             cacheRoutePreview(workoutID: id, routes: routes)
-            let workoutSummary = try await summary(for: workout, knownRoutes: !routes.isEmpty)
+            var workoutSummary = try await summary(for: workout, knownRoutes: !routes.isEmpty)
+            if !quantitySamples.isEmpty || !categories.isEmpty {
+                workoutSummary.hasDetailedSamples = true
+            }
             let events = (workout.workoutEvents ?? []).map {
                 WorkoutEvent(
                     id: UUID(),
@@ -304,7 +307,43 @@ actor LiveHealthKitClient: HealthKitClient {
                     predicates: [.quantitySample(type: entry.type, predicate: predicate)],
                     sortDescriptors: [SortDescriptor(\.startDate)]
                 )
-                let samples = try await descriptor.result(for: healthStore)
+                var samples = try await descriptor.result(for: healthStore)
+                var provenance = DataProvenance.healthKitSample
+                if WorkoutSampleQueryPolicy.shouldUseTimeIntervalFallback(
+                    for: entry.type,
+                    associatedSampleCount: samples.count
+                ) {
+                    let timePredicate = HKQuery.predicateForSamples(
+                        withStart: workout.startDate,
+                        end: workout.endDate,
+                        options: [.strictStartDate, .strictEndDate]
+                    )
+                    let timeDescriptor = HKSampleQueryDescriptor<HKQuantitySample>(
+                        predicates: [
+                            .quantitySample(
+                                type: entry.type,
+                                predicate: timePredicate
+                            )
+                        ],
+                        sortDescriptors: [SortDescriptor(\.startDate)]
+                    )
+                    samples = try await timeDescriptor.result(for: healthStore)
+                        .filter {
+                            WorkoutSampleQueryPolicy.isStrictlyWithinWorkout(
+                                sampleStart: $0.startDate,
+                                sampleEnd: $0.endDate,
+                                workoutStart: workout.startDate,
+                                workoutEnd: workout.endDate
+                            )
+                        }
+                    if !samples.isEmpty {
+                        provenance = .healthKitTimeMatchedSample
+                        warnings.append(
+                            "Heart-rate samples were not explicitly associated with this workout; "
+                                + "\(samples.count) samples were matched strictly to its time interval."
+                        )
+                    }
+                }
                 output.append(contentsOf: samples.map {
                     WorkoutSample(
                         id: $0.uuid,
@@ -315,7 +354,7 @@ actor LiveHealthKitClient: HealthKitClient {
                         unit: entry.unit.unitString,
                         source: HealthKitMappings.source($0.sourceRevision),
                         device: HealthKitMappings.device($0.device),
-                        provenance: .healthKitSample,
+                        provenance: provenance,
                         metadata: HealthKitMappings.safeMetadata($0.metadata)
                     )
                 })
@@ -464,5 +503,27 @@ actor LiveHealthKitClient: HealthKitClient {
             }
         }.sorted { $0.id < $1.id }
         return (values, warnings.sorted())
+    }
+}
+
+enum WorkoutSampleQueryPolicy {
+    static func shouldUseTimeIntervalFallback(
+        for type: HKQuantityType,
+        associatedSampleCount: Int
+    ) -> Bool {
+        associatedSampleCount == 0
+            && type.identifier == HKQuantityTypeIdentifier.heartRate.rawValue
+    }
+
+    static func isStrictlyWithinWorkout(
+        sampleStart: Date,
+        sampleEnd: Date,
+        workoutStart: Date,
+        workoutEnd: Date
+    ) -> Bool {
+        sampleStart >= workoutStart
+            && sampleStart < workoutEnd
+            && sampleEnd >= sampleStart
+            && sampleEnd < workoutEnd
     }
 }

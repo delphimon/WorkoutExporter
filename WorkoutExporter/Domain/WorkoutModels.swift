@@ -2,6 +2,7 @@ import Foundation
 
 enum DataProvenance: String, Codable, Sendable {
     case healthKitSample
+    case healthKitTimeMatchedSample
     case healthKitStatistic
     case location
     case routeDerived
