@@ -11,6 +11,9 @@ enum HealthKitMappings {
             (.activeEnergyBurned, .kilocalorie(), "Active energy recorded during workouts."),
             (.basalEnergyBurned, .kilocalorie(), "Basal energy when associated with a workout."),
             (.runningSpeed, .meter().unitDivided(by: .second()), "Native running speed takes precedence over derived speed."),
+            (.runningGroundContactTime, .secondUnit(with: .milli), "Running ground-contact time export."),
+            (.runningStrideLength, .meter(), "Running stride-length export."),
+            (.runningVerticalOscillation, .meterUnit(with: .centi), "Running vertical-oscillation export."),
             (.walkingSpeed, .meter().unitDivided(by: .second()), "Native walking speed takes precedence over derived speed."),
             (.cyclingSpeed, .meter().unitDivided(by: .second()), "Native cycling speed takes precedence over derived speed."),
             (.cyclingCadence, .count().unitDivided(by: .minute()), "Cycling cadence export."),
@@ -112,8 +115,27 @@ enum HealthKitMappings {
         }
     }
 
-    static func unit(for type: HKQuantityType) -> HKUnit {
-        quantityTypes.first(where: { $0.type == type })?.unit ?? .count()
+    static func compatibleUnit(
+        for type: HKQuantityType,
+        quantity: HKQuantity
+    ) -> HKUnit? {
+        var candidates: [HKUnit] = []
+        if let mapped = quantityTypes.first(where: { $0.type == type })?.unit {
+            candidates.append(mapped)
+        }
+        candidates.append(contentsOf: [
+            .count(),
+            .count().unitDivided(by: .minute()),
+            .second(),
+            .secondUnit(with: .milli),
+            .meter(),
+            .meterUnit(with: .centi),
+            .meter().unitDivided(by: .second()),
+            .watt(),
+            .kilocalorie(),
+            .percent()
+        ])
+        return candidates.first { quantity.is(compatibleWith: $0) }
     }
 }
 

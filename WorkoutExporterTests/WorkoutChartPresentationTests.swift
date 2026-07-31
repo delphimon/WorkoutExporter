@@ -83,11 +83,8 @@ final class WorkoutChartPresentationTests: XCTestCase {
         )
         XCTAssertTrue(
             presentation.pacePoints.allSatisfy {
-                guard let pace = $0.rawPaceSecondsPerKilometer else {
-                    return false
-                }
                 return paceDomain.date.contains($0.timestamp)
-                    && paceDomain.value.contains(pace)
+                    && paceDomain.value.contains($0.paceSecondsPerKilometer)
             }
         )
         XCTAssertTrue(
@@ -111,12 +108,13 @@ final class WorkoutChartPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.elevationDomain, elevationDomain)
     }
 
-    func testPacePresentationExcludesBelowThresholdArtifactsWithoutChangingRoute() async throws {
+    func testPacePresentationSmoothsAcrossShortStopsWithoutChangingRoute() async throws {
         var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
         let routeID = try XCTUnwrap(detail.routes.keys.first)
         var route = try XCTUnwrap(detail.routes[routeID])
         route[80].latitude = route[79].latitude + 0.000_000_000_001
         route[80].longitude = route[79].longitude + 0.000_000_000_001
+        route[80].speedMetersPerSecond = 0.000_001
         let artifactPoint = route[80]
         detail.routes[routeID] = route
         detail.derived = try await WorkoutMetricCalculator().calculate(detail: detail)
@@ -140,11 +138,60 @@ final class WorkoutChartPresentationTests: XCTestCase {
         )
         XCTAssertTrue(
             presentation.pacePoints.allSatisfy {
-                ($0.derivedSpeedMetersPerSecond ?? 0)
+                $0.speedMetersPerSecond
                     >= detail.metricSettings.movingSpeedThresholdMetersPerSecond
             }
         )
+        XCTAssertTrue(
+            presentation.pacePoints.allSatisfy {
+                $0.paceSecondsPerKilometer < 10_000
+            }
+        )
+        XCTAssertLessThan(
+            presentation.pacePoints.count,
+            try XCTUnwrap(detail.derived.routeMetrics).count
+        )
+        let before = try XCTUnwrap(
+            presentation.nearestPacePoint(to: route[79].timestamp)
+        )
+        let after = try XCTUnwrap(
+            presentation.nearestPacePoint(to: route[81].timestamp)
+        )
+        XCTAssertEqual(before.seriesID, after.seriesID)
         XCTAssertEqual(detail.routes[routeID]?[80], artifactPoint)
+    }
+
+    func testRunningWorkoutWithoutAboveThresholdPaceProducesEmptySafePresentation() async throws {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.metricSettings.movingSpeedThresholdMetersPerSecond = 3
+        detail.derived = try await WorkoutMetricCalculator().calculate(
+            detail: detail
+        )
+
+        let presentation = WorkoutChartPresentation(detail: detail)
+
+        XCTAssertTrue(presentation.pacePoints.isEmpty)
+        XCTAssertNil(presentation.paceDomain)
+        XCTAssertNil(
+            presentation.nearestPacePoint(to: detail.summary.startDate)
+        )
+    }
+
+    func testInvalidRunningRoutePointIsOmittedFromPresentationButPreservedInDetail() async throws {
+        var detail = try await calculatedDetail(.cleanOutdoorRun)
+        let routeID = try XCTUnwrap(detail.routes.keys.first)
+        var route = try XCTUnwrap(detail.routes[routeID])
+        route[10].latitude = .nan
+        route[10].altitudeMeters = .nan
+        let invalidPoint = route[10]
+        detail.routes[routeID] = route
+
+        let presentation = WorkoutChartPresentation(detail: detail)
+
+        XCTAssertFalse(presentation.routePoints.contains { $0.id == invalidPoint.id })
+        XCTAssertFalse(presentation.elevationPoints.contains { $0.id == invalidPoint.id })
+        XCTAssertTrue(detail.routes[routeID]?[10].latitude.isNaN == true)
+        XCTAssertTrue(detail.routes[routeID]?[10].altitudeMeters.isNaN == true)
     }
 
     func testActivityTimeZoneUsesRecordedWorkoutMetadata() {

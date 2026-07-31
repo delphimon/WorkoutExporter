@@ -1,7 +1,52 @@
+import HealthKit
 import XCTest
 @testable import WorkoutExporter
 
 final class MetricEngineTests: XCTestCase {
+    func testRunningGroundContactTimeUsesCompatibleMillisecondUnit() throws {
+        let type = try XCTUnwrap(
+            HKObjectType.quantityType(
+                forIdentifier: .runningGroundContactTime
+            )
+        )
+        let milliseconds = HKUnit.secondUnit(with: .milli)
+        let quantity = HKQuantity(
+            unit: milliseconds,
+            doubleValue: 245
+        )
+
+        let unit = try XCTUnwrap(
+            HealthKitMappings.compatibleUnit(
+                for: type,
+                quantity: quantity
+            )
+        )
+
+        XCTAssertTrue(quantity.is(compatibleWith: unit))
+        XCTAssertEqual(unit.unitString, "ms")
+        XCTAssertEqual(quantity.doubleValue(for: unit), 245)
+    }
+
+    func testIncompatibleMappedUnitFallsBackToQuantityDimension() throws {
+        let countType = try XCTUnwrap(
+            HKObjectType.quantityType(forIdentifier: .stepCount)
+        )
+        let quantity = HKQuantity(
+            unit: .secondUnit(with: .milli),
+            doubleValue: 250
+        )
+
+        let unit = try XCTUnwrap(
+            HealthKitMappings.compatibleUnit(
+                for: countType,
+                quantity: quantity
+            )
+        )
+
+        XCTAssertTrue(quantity.is(compatibleWith: unit))
+        XCTAssertEqual(quantity.doubleValue(for: unit), 0.25)
+    }
+
     func testCleanRouteProducesDistancePaceElevationAndHeartRate() async throws {
         let detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
         let metrics = try await WorkoutMetricCalculator().calculate(detail: detail)
