@@ -20,11 +20,20 @@ actor ExportPackageBuilder: ExportPackageBuilding {
     ) async throws -> ExportPackageResult {
         do {
             guard !requests.isEmpty else { throw WorkoutExporterError.noAccessibleData }
+            if options.formats == [.summary] {
+                return try await buildSummaryOnlyPackage(
+                    for: requests,
+                    options: options,
+                    to: directory,
+                    progress: progress
+                )
+            }
             let staging = directory.appending(path: "WorkoutExporter-\(UUID().uuidString)", directoryHint: .isDirectory)
             try ExportUtilities.createProtectedDirectory(at: staging)
             defer { try? FileManager.default.removeItem(at: staging) }
-            var completedWorkouts: [(id: UUID, summary: WorkoutSummary)] = []
+            var completedWorkouts: [WorkoutSummaryExportRecord] = []
             var failures: [String] = []
+            let detailedFormats = options.formats.subtracting([.summary])
 
             for (index, request) in requests.enumerated() {
                 try Task.checkCancellation()
@@ -39,14 +48,22 @@ actor ExportPackageBuilder: ExportPackageBuilding {
                     )
                     let destinationFolder = staging.appending(path: folderName, directoryHint: .isDirectory)
                     workoutFolder = destinationFolder
-                    _ = try await exporter.export(
+                    let writtenFiles = try await exporter.export(
                         preparedWorkout,
-                        formats: options.formats,
+                        formats: detailedFormats,
                         to: destinationFolder
                     ) { phase in
                         await progress(self.update(phase, index: index, total: requests.count))
                     }
-                    let readme = packageReadme(preparedWorkout, options: options)
+                    let emittedFormats = emittedFormats(
+                        requested: detailedFormats,
+                        writtenFiles: writtenFiles
+                    )
+                    let readme = packageReadme(
+                        preparedWorkout,
+                        options: options,
+                        emittedFormats: emittedFormats
+                    )
                     try ExportUtilities.writeProtected(
                         Data(readme.utf8),
                         to: destinationFolder.appending(path: "README.txt")
@@ -55,13 +72,19 @@ actor ExportPackageBuilder: ExportPackageBuilding {
                     let manifest = try manifest(
                         for: destinationFolder,
                         warnings: preparedWorkout.warnings,
-                        formats: options.formats
+                        formats: emittedFormats
                     )
                     try ExportUtilities.writeProtected(
                         encoded(manifest),
                         to: destinationFolder.appending(path: "manifest.json")
                     )
-                    completedWorkouts.append((preparedWorkout.id, preparedWorkout.summary))
+                    completedWorkouts.append(
+                        WorkoutSummaryExportRecord(
+                            summary: preparedWorkout.summary,
+                            locationTag: options.includeRoute ? request.locationTag : nil,
+                            wasExported: request.wasExported
+                        )
+                    )
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch let error as WorkoutExporterError where error == .cancelled {
@@ -83,6 +106,16 @@ actor ExportPackageBuilder: ExportPackageBuilding {
                     failures.joined(separator: "\n")
                 )
             }
+            if options.formats.contains(.summary) {
+                await progress(update(.summary, index: requests.count - 1, total: requests.count))
+                try ExportUtilities.writeProtected(
+                    WorkoutSummaryCSVExporter.data(
+                        records: completedWorkouts,
+                        unitScheme: options.unitScheme
+                    ),
+                    to: staging.appending(path: "workouts.csv")
+                )
+            }
             if !failures.isEmpty {
                 let report = (
                     ["Some selected workouts could not be exported. Completed workouts remain usable.", ""]
@@ -96,7 +129,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
 
             if completedWorkouts.count > 1 || !failures.isEmpty {
                 let index = completedWorkouts.map {
-                    "\(ExportUtilities.safeFilename(for: $0.summary, format: options.filenameFormat)),\($0.id.uuidString),\(ExportUtilities.date($0.summary.startDate)),\(ExportUtilities.spreadsheetSafeCSV($0.summary.activityName))"
+                    "\(ExportUtilities.safeFilename(for: $0.summary, format: options.filenameFormat)),\($0.summary.id.uuidString),\(ExportUtilities.date($0.summary.startDate)),\(ExportUtilities.spreadsheetSafeCSV($0.summary.activityName))"
                 }
                 let text = (["folder,workout_id,start_time,activity"] + index).joined(separator: "\r\n") + "\r\n"
                 try ExportUtilities.writeProtected(Data(text.utf8), to: staging.appending(path: "index.csv"))
@@ -119,7 +152,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
                 await progress(update(.finalizing, index: requests.count - 1, total: requests.count))
                 return ExportPackageResult(
                     url: destination,
-                    exportedWorkoutIDs: Set(completedWorkouts.map(\.id))
+                    exportedWorkoutIDs: Set(completedWorkouts.map(\.summary.id))
                 )
             }
 
@@ -132,7 +165,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
             try ExportUtilities.applyCompleteFileProtectionRecursively(to: destination)
             return ExportPackageResult(
                 url: destination,
-                exportedWorkoutIDs: Set(completedWorkouts.map(\.id))
+                exportedWorkoutIDs: Set(completedWorkouts.map(\.summary.id))
             )
         } catch is CancellationError {
             throw WorkoutExporterError.cancelled
@@ -141,6 +174,63 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         } catch {
             throw WorkoutExporterError.fileWriteFailure(error.localizedDescription)
         }
+    }
+
+    private func buildSummaryOnlyPackage(
+        for requests: [WorkoutExportRequest],
+        options: ExportOptions,
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress) async -> Void
+    ) async throws -> ExportPackageResult {
+        var records: [WorkoutSummaryExportRecord] = []
+        records.reserveCapacity(requests.count)
+        for (index, request) in requests.enumerated() {
+            try Task.checkCancellation()
+            await progress(update(.preparing, index: index, total: requests.count))
+            let summary: WorkoutSummary
+            if let existingSummary = request.summary {
+                summary = existingSummary
+            } else {
+                let detail = try await request.load()
+                summary = detail.summary
+            }
+            records.append(
+                WorkoutSummaryExportRecord(
+                    summary: Self.filteredSummary(summary, options: options),
+                    locationTag: options.includeRoute ? request.locationTag : nil,
+                    wasExported: request.wasExported
+                )
+            )
+        }
+
+        await progress(update(.summary, index: requests.count - 1, total: requests.count))
+        let data = WorkoutSummaryCSVExporter.data(
+            records: records,
+            unitScheme: options.unitScheme
+        )
+        let baseName = "workout-summary-\(ExportUtilities.date(Date()).prefix(10))-\(records.count)-workouts"
+        let destination: URL
+        if options.packageAsZIP {
+            let staging = directory.appending(
+                path: "WorkoutExporter-\(UUID().uuidString)",
+                directoryHint: .isDirectory
+            )
+            try ExportUtilities.createProtectedDirectory(at: staging)
+            defer { try? FileManager.default.removeItem(at: staging) }
+            let csv = staging.appending(path: "workouts.csv")
+            try ExportUtilities.writeProtected(data, to: csv)
+            await progress(update(.archiving, index: requests.count - 1, total: requests.count))
+            destination = directory.appending(path: "\(baseName).zip")
+            try zipWriter.write(files: [("workouts.csv", csv)], to: destination)
+        } else {
+            destination = directory.appending(path: "\(baseName).csv")
+            try ExportUtilities.writeProtected(data, to: destination)
+        }
+        await progress(update(.finalizing, index: requests.count - 1, total: requests.count))
+        return ExportPackageResult(
+            url: destination,
+            exportedWorkoutIDs: Set(records.map(\.summary.id))
+        )
     }
 
     nonisolated static func filtered(_ workout: WorkoutDetail, options: ExportOptions) -> WorkoutDetail {
@@ -239,6 +329,29 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         return result
     }
 
+    private nonisolated static func filteredSummary(
+        _ summary: WorkoutSummary,
+        options: ExportOptions
+    ) -> WorkoutSummary {
+        var result = summary
+        if !options.includeHeartRate {
+            result.averageHeartRateBPM = nil
+        }
+        if !options.includeRoute {
+            result.hasRoute = false
+        }
+        if !options.includeSourceAndDevice {
+            result.source = SourceInfo(
+                name: "Redacted",
+                bundleIdentifier: "",
+                version: nil,
+                operatingSystemVersion: nil
+            )
+            result.device = nil
+        }
+        return result
+    }
+
     private nonisolated static func isHeartRateIdentifier(_ identifier: String) -> Bool {
         identifier.localizedCaseInsensitiveContains("HeartRate")
     }
@@ -298,7 +411,27 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         }
     }
 
-    private func packageReadme(_ detail: WorkoutDetail, options: ExportOptions) -> String {
+    private func emittedFormats(
+        requested: Set<ExportFormat>,
+        writtenFiles: [URL]
+    ) -> Set<ExportFormat> {
+        let names = Set(writtenFiles.map(\.lastPathComponent))
+        return Set(requested.filter { format in
+            switch format {
+            case .summary: names.contains("workouts.csv")
+            case .json: names.contains("workout.json")
+            case .csv: names.contains { $0.hasSuffix(".csv") }
+            case .gpx: names.contains("route.gpx")
+            case .tcx: names.contains("workout.tcx")
+            }
+        })
+    }
+
+    private func packageReadme(
+        _ detail: WorkoutDetail,
+        options: ExportOptions,
+        emittedFormats: Set<ExportFormat>
+    ) -> String {
         """
         Workout Exporter package
         Schema: com.delphimon.workout-export \(ExportSchema.version)
@@ -309,7 +442,8 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         HealthKit workout statistics and raw samples are preserved without smoothing or replacement.
         Any supplemental derived values remain separate and carry provenance.
         Provenance is recorded in JSON and relevant CSV columns.
-        Included formats: \(options.formats.map(\.displayName).sorted().joined(separator: ", "))
+        Included formats: \(emittedFormats.map(\.displayName).sorted().joined(separator: ", "))
+        Summary CSV units: \(options.unitScheme.label)
 
         Metric settings:
         Moving threshold: \(detail.metricSettings.movingSpeedThresholdMetersPerSecond) m/s

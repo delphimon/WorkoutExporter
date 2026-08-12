@@ -19,6 +19,7 @@ final class UserSettings {
     var includeSourceMetadata: Bool
     var packageAsZIP: Bool
     var defaultFormats: Set<ExportFormat>
+    var defaultExportPreset: ExportPreset
 
     private let defaults: UserDefaults
 
@@ -31,11 +32,14 @@ final class UserSettings {
         includeRawSamples = defaults.object(forKey: Keys.includeRawSamples) as? Bool ?? true
         includeSourceMetadata = defaults.object(forKey: Keys.includeSourceMetadata) as? Bool ?? true
         packageAsZIP = defaults.object(forKey: Keys.packageAsZIP) as? Bool ?? true
+        defaultExportPreset = ExportPreset(
+            rawValue: defaults.string(forKey: Keys.defaultExportPreset) ?? ""
+        ) ?? .basic
         if let data = defaults.data(forKey: Keys.defaultFormats),
            let formats = try? JSONDecoder().decode(Set<ExportFormat>.self, from: data) {
             defaultFormats = formats
         } else {
-            defaultFormats = [.json, .csv, .gpx, .tcx]
+            defaultFormats = [.json, .gpx]
         }
         if let data = defaults.data(forKey: Keys.metricSettings),
            let decoded = try? JSONDecoder().decode(MetricCalculationSettings.self, from: data) {
@@ -55,6 +59,7 @@ final class UserSettings {
         defaults.set(includeSourceMetadata, forKey: Keys.includeSourceMetadata)
         defaults.set(packageAsZIP, forKey: Keys.packageAsZIP)
         defaults.set(try? JSONEncoder().encode(defaultFormats), forKey: Keys.defaultFormats)
+        defaults.set(defaultExportPreset.rawValue, forKey: Keys.defaultExportPreset)
         defaults.set(try? JSONEncoder().encode(metricSettings), forKey: Keys.metricSettings)
     }
 
@@ -65,6 +70,7 @@ final class UserSettings {
         static let includeSourceMetadata = "includeSourceMetadata"
         static let packageAsZIP = "packageAsZIP"
         static let defaultFormats = "defaultFormats"
+        static let defaultExportPreset = "defaultExportPreset"
         static let metricSettings = "metricSettings"
     }
 }

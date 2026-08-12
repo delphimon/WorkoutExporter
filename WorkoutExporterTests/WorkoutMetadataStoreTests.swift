@@ -171,4 +171,43 @@ final class WorkoutMetadataStoreTests: XCTestCase {
         XCTAssertTrue(store.isExported(successfulID))
         XCTAssertNil(store.cachedExport(for: [successfulID]))
     }
+
+    func testCachedExportsAreScopedToExactExportOptions() throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let basicURL = root.appending(path: "basic.csv")
+        let detailedURL = root.appending(path: "detailed.zip")
+        try Data("basic".utf8).write(to: basicURL)
+        try Data("detailed".utf8).write(to: detailedURL)
+        let store = WorkoutMetadataStore(
+            persistenceURL: root.appending(path: "metadata.json"),
+            exportDirectory: root
+        )
+        let workoutID = UUID()
+
+        try store.recordExport(
+            workoutIDs: [workoutID],
+            fileURL: basicURL,
+            cacheKey: "basic"
+        )
+        try store.recordExport(
+            workoutIDs: [workoutID],
+            fileURL: detailedURL,
+            cacheKey: "detailed"
+        )
+
+        XCTAssertEqual(
+            store.cachedExport(for: [workoutID], cacheKey: "basic")?.url,
+            basicURL
+        )
+        XCTAssertEqual(
+            store.cachedExport(for: [workoutID], cacheKey: "detailed")?.url,
+            detailedURL
+        )
+        XCTAssertEqual(store.cachedExports.count, 2)
+    }
 }

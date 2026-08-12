@@ -65,7 +65,17 @@ struct WorkoutDetailView: View {
         }
         .sheet(isPresented: $showExport) {
             if case .loaded(let detail) = model.state {
-                ExportView(requests: [.loaded(detail)])
+                ExportView(
+                    requests: [
+                        .loaded(
+                            detail,
+                            locationTag: environment.workoutMetadataStore
+                                .customLocationTag(for: detail.id),
+                            wasExported: environment.workoutMetadataStore
+                                .isExported(detail.id)
+                        )
+                    ]
+                )
             }
         }
         .sheet(isPresented: $showLocationEditor) {

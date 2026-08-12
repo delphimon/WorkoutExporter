@@ -15,6 +15,8 @@ struct WorkoutFileExporter: WorkoutExporting {
                 try Task.checkCancellation()
                 await progress(format.progressPhase)
                 switch format {
+                case .summary:
+                    continue
                 case .json:
                     let url = directory.appending(path: "workout.json")
                     try ExportUtilities.writeProtected(json(detail), to: url)
@@ -22,6 +24,7 @@ struct WorkoutFileExporter: WorkoutExporting {
                 case .csv:
                     output.append(contentsOf: try writeCSVFiles(detail, to: directory))
                 case .gpx:
+                    guard !detail.routePoints.isEmpty else { continue }
                     let url = directory.appending(path: "route.gpx")
                     try writeFile(to: url) { try writeGPX(detail, to: $0) }
                     output.append(url)
@@ -391,6 +394,7 @@ struct HeartRateLookup: Sendable {
 private extension ExportFormat {
     var progressPhase: ExportProgress.Phase {
         switch self {
+        case .summary: .summary
         case .json: .json
         case .csv: .csv
         case .gpx: .gpx

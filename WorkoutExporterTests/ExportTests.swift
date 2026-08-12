@@ -47,7 +47,7 @@ final class ExportTests: XCTestCase {
         let data = try WorkoutFileExporter().json(detail)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["schemaName"] as? String, "com.delphimon.workout-export")
-        XCTAssertEqual(object["schemaVersion"] as? String, "1.1.0")
+        XCTAssertEqual(object["schemaVersion"] as? String, "1.2.0")
         let exportedAt = try XCTUnwrap(object["exportedAt"] as? String)
         XCTAssertTrue(exportedAt.contains("."))
         let workout = try XCTUnwrap(object["workout"] as? [String: Any])
@@ -78,6 +78,194 @@ final class ExportTests: XCTestCase {
         let files = try WorkoutFileExporter().csvFiles(SyntheticWorkoutFactory.make(.cleanOutdoorRun))
         XCTAssertEqual(Set(files.map(\.0)), ["samples.csv", "route.csv", "events.csv", "splits.csv", "statistics.csv"])
         XCTAssertTrue(files.allSatisfy { String(decoding: $0.1, as: UTF8.self).contains("\r\n") })
+    }
+
+    func testPresetsUseOneNonredundantDefaultRepresentation() {
+        let basic = ExportOptions.basic(unitScheme: .usCustomary)
+        XCTAssertEqual(basic.formats, [.summary])
+        XCTAssertFalse(basic.includeRawSamples)
+        XCTAssertFalse(basic.includeDerivedMetrics)
+        XCTAssertFalse(basic.packageAsZIP)
+        XCTAssertEqual(basic.unitScheme, .usCustomary)
+
+        let detailed = ExportOptions.detailed(unitScheme: .metric)
+        XCTAssertEqual(detailed.formats, [.json, .gpx])
+        XCTAssertTrue(detailed.includeRawSamples)
+        XCTAssertTrue(detailed.includeDerivedMetrics)
+        XCTAssertTrue(detailed.includeRoute)
+        XCTAssertTrue(detailed.packageAsZIP)
+        XCTAssertEqual(
+            detailed.cacheKey,
+            ExportOptions.detailed(unitScheme: .usCustomary).cacheKey
+        )
+        XCTAssertNotEqual(
+            basic.cacheKey,
+            ExportOptions.basic(unitScheme: .metric).cacheKey
+        )
+    }
+
+    func testSummaryCSVUsesSelectedUnitsStableIDsAndLocationTags() throws {
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.summary.totalDistanceMeters = 1_609.344
+        detail.summary.elevationGainMeters = 304.8
+        let original = detail.summary
+        let record = WorkoutSummaryExportRecord(
+            summary: detail.summary,
+            locationTag: "=External formula",
+            wasExported: false
+        )
+
+        let data = WorkoutSummaryCSVExporter.data(
+            records: [record],
+            unitScheme: .usCustomary
+        )
+        let text = String(decoding: data, as: UTF8.self)
+
+        XCTAssertTrue(text.hasPrefix(WorkoutSummaryCSVExporter.columns.joined(separator: ",")))
+        XCTAssertFalse(WorkoutSummaryCSVExporter.columns.contains("moving_time_s"))
+        XCTAssertTrue(text.contains(detail.id.uuidString))
+        XCTAssertTrue(text.contains("'=External formula"))
+        XCTAssertTrue(text.contains(",1.0,mi,1000.0,ft,"))
+        XCTAssertEqual(detail.summary, original)
+    }
+
+    func testBasicSummaryExportDoesNotLoadWorkoutDetails() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        let request = WorkoutExportRequest(
+            id: detail.id,
+            summary: detail.summary,
+            locationTag: "Neighborhood",
+            wasExported: false
+        ) {
+            throw WorkoutExporterError.queryFailure("Detail should not be loaded")
+        }
+
+        let result = try await ExportPackageBuilder().buildPackageResult(
+            for: [request],
+            options: .basic(unitScheme: .metric),
+            to: root
+        )
+
+        XCTAssertEqual(result.exportedWorkoutIDs, [detail.id])
+        XCTAssertEqual(result.url.pathExtension, "csv")
+        let text = try String(contentsOf: result.url, encoding: .utf8)
+        XCTAssertTrue(text.contains(detail.id.uuidString))
+        XCTAssertTrue(text.contains("Neighborhood"))
+    }
+
+    func testSummaryOnlyExportHonorsHeartRateRouteAndSourceRedaction() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        detail.summary.averageHeartRateBPM = 199.25
+        detail.summary.source.name = "Sensitive Source"
+        detail.summary.source.bundleIdentifier = "com.example.sensitive"
+        var options = ExportOptions.basic(unitScheme: .metric)
+        options.includeHeartRate = false
+        options.includeRoute = false
+        options.includeSourceAndDevice = false
+
+        let result = try await ExportPackageBuilder().buildPackageResult(
+            for: [
+                .loaded(
+                    detail,
+                    locationTag: "Sensitive Location"
+                )
+            ],
+            options: options,
+            to: root
+        )
+        let text = try String(contentsOf: result.url, encoding: .utf8)
+
+        XCTAssertFalse(text.contains("199.25"))
+        XCTAssertFalse(text.contains("Sensitive Source"))
+        XCTAssertFalse(text.contains("com.example.sensitive"))
+        XCTAssertFalse(text.contains("Sensitive Location"))
+        XCTAssertTrue(text.contains("Redacted"))
+    }
+
+    func testDetailedPresetWritesJSONAndGPXWithoutDefaultCSVOrTCXDuplicates() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let detail = SyntheticWorkoutFactory.make(.cleanOutdoorRun)
+        var options = ExportOptions.detailed(unitScheme: .metric)
+        options.packageAsZIP = false
+
+        let package = try await ExportPackageBuilder().buildPackage(
+            for: [detail],
+            options: options,
+            to: root
+        )
+        let workoutFolder = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(
+                at: package,
+                includingPropertiesForKeys: [.isDirectoryKey]
+            ).first
+        )
+        let filenames = Set(
+            try FileManager.default.contentsOfDirectory(
+                at: workoutFolder,
+                includingPropertiesForKeys: nil
+            ).map(\.lastPathComponent)
+        )
+
+        XCTAssertTrue(filenames.contains("workout.json"))
+        XCTAssertTrue(filenames.contains("route.gpx"))
+        XCTAssertFalse(filenames.contains("samples.csv"))
+        XCTAssertFalse(filenames.contains("workout.tcx"))
+        let json = try String(
+            contentsOf: workoutFolder.appending(path: "workout.json"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(json.contains("HKQuantityTypeIdentifierHeartRate"))
+    }
+
+    func testDetailedPresetOmitsEmptyGPXForWorkoutWithoutRoute() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: UUID().uuidString,
+            directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var options = ExportOptions.detailed(unitScheme: .metric)
+        options.packageAsZIP = false
+
+        let package = try await ExportPackageBuilder().buildPackage(
+            for: [SyntheticWorkoutFactory.make(.noRoute)],
+            options: options,
+            to: root
+        )
+        let workoutFolder = try XCTUnwrap(
+            FileManager.default.contentsOfDirectory(
+                at: package,
+                includingPropertiesForKeys: [.isDirectoryKey]
+            ).first
+        )
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: workoutFolder.appending(path: "route.gpx").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: workoutFolder.appending(path: "workout.json").path
+            )
+        )
     }
 
     func testHeartRateLookupReturnsNearestNativeSampleWithinTolerance() throws {
@@ -154,7 +342,7 @@ final class ExportTests: XCTestCase {
         let result = try await ExportPackageBuilder(
             exporter: SelectiveFailingExporter(failedID: failed.id)
         ).buildPackageResult(
-            for: [first, failed].map(WorkoutExportRequest.loaded),
+            for: [first, failed].map { WorkoutExportRequest.loaded($0) },
             options: options,
             to: root
         )

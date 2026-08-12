@@ -119,7 +119,11 @@ struct WorkoutListView: View {
             )
         }
         .sheet(isPresented: $showBatchExport, onDismiss: syncMetadata) {
-            BatchExportView(workoutIDs: Array(model.selectedIDs))
+            BatchExportView(
+                workouts: model.workouts.filter {
+                    model.selectedIDs.contains($0.id)
+                }
+            )
         }
         .sheet(
             item: $workoutToEditLocationTag,

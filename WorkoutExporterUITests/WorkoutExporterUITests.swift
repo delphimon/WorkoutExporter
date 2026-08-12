@@ -124,14 +124,44 @@ final class WorkoutExporterUITests: XCTestCase {
 
         app.buttons["workout-export-button"].tap()
         XCTAssertTrue(app.navigationBars["Export"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.switches["Raw samples"].exists)
-        XCTAssertTrue(app.switches["GPS route"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["export-preset-basic"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["One row per workout"].exists)
+        app.descendants(matching: .any)["export-preset-detailed"].tap()
+        XCTAssertTrue(
+            app.staticTexts["GPX track when GPS data is available"]
+                .waitForExistence(timeout: 3)
+        )
         XCTAssertTrue(app.buttons["create-export-button"].isEnabled)
         app.buttons["create-export-button"].tap()
         XCTAssertTrue(
             app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Share'"))
                 .firstMatch.waitForExistence(timeout: 30)
         )
+    }
+
+    @MainActor
+    func testFilteredStatsExportsCompleteActivityListCSV() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Sample Workouts"].waitForExistence(timeout: 5))
+
+        app.buttons["workout-stats-button"].tap()
+        XCTAssertTrue(app.navigationBars["Filtered Stats"].waitForExistence(timeout: 5))
+        let create = app.buttons["create-filtered-stats-export-button"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        let deadline = Date().addingTimeInterval(10)
+        while !create.isEnabled, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        XCTAssertTrue(create.isEnabled)
+        create.tap()
+        let share = app.buttons["share-filtered-stats-export-button"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        XCTAssertTrue(share.label.contains(".csv"))
     }
 
     @MainActor
