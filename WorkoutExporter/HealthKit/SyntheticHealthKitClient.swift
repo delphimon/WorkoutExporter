@@ -110,7 +110,7 @@ enum SyntheticWorkoutFactory {
         let activityName: String
         let activityIdentifier: UInt
         switch scenario {
-        case .hikeWithStops: (activityName, activityIdentifier) = ("Hiking", 52)
+        case .hikeWithStops: (activityName, activityIdentifier) = ("Hiking", 24)
         case .walkWithAutoPause: (activityName, activityIdentifier) = ("Walking", 52)
         case .multisport: (activityName, activityIdentifier) = ("Multisport", 82)
         default: (activityName, activityIdentifier) = ("Running", 37)

@@ -189,11 +189,46 @@ private struct SummarySection: View {
 
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             MetricCard("Duration", MeasurementFormatterFactory.duration(summary.duration), "clock")
-            MetricCard("Workout Distance", MeasurementFormatterFactory.distance(summary.totalDistanceMeters, preference: units), "figure.run")
-            MetricCard("GPS-Derived Distance", MeasurementFormatterFactory.distance(detail?.derived.routeDistanceMeters?.value, preference: units), "location")
-            MetricCard("Moving Time", detail?.derived.eventAwareMovingTime.map { MeasurementFormatterFactory.duration($0.value) } ?? "—", "pause.circle")
-            MetricCard("Average Heart Rate", detail?.derived.averageHeartRateBPM.map { "\(Int($0.value.rounded())) bpm" } ?? summary.averageHeartRateBPM.map { "\(Int($0.rounded())) bpm" } ?? "—", "heart")
-            MetricCard("Workout Elevation Gain", MeasurementFormatterFactory.elevation(summary.elevationGainMeters, preference: units), "mountain.2")
+            if let energy = summary.activeEnergyKilocalories {
+                MetricCard(
+                    "Active Energy", "\(Int(energy.rounded()).formatted()) kcal", "flame")
+            }
+            if let distance = summary.totalDistanceMeters {
+                MetricCard(
+                    "Workout Distance",
+                    MeasurementFormatterFactory.distance(distance, preference: units),
+                    WorkoutActivityCatalog.symbolName(
+                        for: summary.activityIdentifier,
+                        fallbackName: summary.activityName
+                    )
+                )
+            }
+            if let distance = detail?.derived.routeDistanceMeters?.value {
+                MetricCard(
+                    "GPS-Derived Distance",
+                    MeasurementFormatterFactory.distance(distance, preference: units),
+                    "location"
+                )
+            }
+            if summary.hasRoute, let movingTime = detail?.derived.eventAwareMovingTime?.value {
+                MetricCard(
+                    "Moving Time",
+                    MeasurementFormatterFactory.duration(movingTime),
+                    "pause.circle"
+                )
+            }
+            if let heartRate = detail?.derived.averageHeartRateBPM?.value
+                ?? summary.averageHeartRateBPM {
+                MetricCard(
+                    "Average Heart Rate", "\(Int(heartRate.rounded())) bpm", "heart")
+            }
+            if let elevation = summary.elevationGainMeters {
+                MetricCard(
+                    "Workout Elevation Gain",
+                    MeasurementFormatterFactory.elevation(elevation, preference: units),
+                    "mountain.2"
+                )
+            }
         }
         .padding()
 

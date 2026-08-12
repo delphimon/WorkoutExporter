@@ -209,16 +209,22 @@ final class WorkoutListViewModelTests: XCTestCase {
         first.totalDistanceMeters = 1_000
         first.duration = 600
         first.elevationGainMeters = 40
+        first.activeEnergyKilocalories = 100
+        first.averageHeartRateBPM = 100
         var second = SyntheticWorkoutFactory.make(.cleanOutdoorRun, index: 2).summary
         second.activityName = "Running"
         second.totalDistanceMeters = nil
         second.duration = 300
         second.elevationGainMeters = 10
+        second.activeEnergyKilocalories = 50
+        second.averageHeartRateBPM = 160
         var hike = SyntheticWorkoutFactory.make(.hikeWithStops, index: 3).summary
         hike.activityName = "Hiking"
         hike.totalDistanceMeters = 2_000
         hike.duration = 1_200
         hike.elevationGainMeters = nil
+        hike.activeEnergyKilocalories = nil
+        hike.averageHeartRateBPM = nil
 
         let groups = WorkoutStatsCalculator.group([first, second, hike])
         let running = try XCTUnwrap(groups.first { $0.activityName == "Running" })
@@ -226,10 +232,34 @@ final class WorkoutListViewModelTests: XCTestCase {
         XCTAssertEqual(running.totalDistanceMeters, 1_000)
         XCTAssertEqual(running.totalDuration, 900)
         XCTAssertEqual(running.totalElevationGainMeters, 50)
+        XCTAssertEqual(running.totalActiveEnergyKilocalories, 150)
+        XCTAssertEqual(running.durationWeightedAverageHeartRateBPM, 120)
         let hiking = try XCTUnwrap(groups.first { $0.activityName == "Hiking" })
         XCTAssertEqual(hiking.totalDistanceMeters, 2_000)
         XCTAssertEqual(hiking.totalDuration, 1_200)
         XCTAssertNil(hiking.totalElevationGainMeters)
+        XCTAssertNil(hiking.totalActiveEnergyKilocalories)
+        XCTAssertNil(hiking.durationWeightedAverageHeartRateBPM)
+    }
+
+    func testStatsGroupByStableActivityIdentifierAndUseCanonicalName() throws {
+        var first = SyntheticWorkoutFactory.make(.cleanOutdoorRun, index: 1).summary
+        first.activityIdentifier = 48
+        first.activityName = "(rawValue: 48)"
+        first.totalDistanceMeters = nil
+        first.elevationGainMeters = nil
+        first.activeEnergyKilocalories = 200
+        var second = first
+        second.id = UUID()
+        second.activityName = "Tennis"
+
+        let group = try XCTUnwrap(WorkoutStatsCalculator.group([first, second]).first)
+        XCTAssertEqual(group.activityIdentifier, 48)
+        XCTAssertEqual(group.activityName, "Tennis")
+        XCTAssertEqual(group.count, 2)
+        XCTAssertNil(group.totalDistanceMeters)
+        XCTAssertNil(group.totalElevationGainMeters)
+        XCTAssertEqual(group.totalActiveEnergyKilocalories, 400)
     }
 
     func testPaginationFailureKeepsLoadedWorkoutsAndLimit() async {

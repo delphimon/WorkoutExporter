@@ -47,25 +47,7 @@ enum HealthKitMappings {
     }
 
     static func activityName(_ type: HKWorkoutActivityType) -> String {
-        switch type {
-        case .hiking: "Hiking"
-        case .walking: "Walking"
-        case .running: "Running"
-        case .cycling: "Cycling"
-        case .swimming: "Swimming"
-        case .rowing: "Rowing"
-        case .elliptical: "Elliptical"
-        case .stairClimbing: "Stair Climbing"
-        case .crossTraining: "Cross Training"
-        case .traditionalStrengthTraining: "Strength Training"
-        case .functionalStrengthTraining: "Functional Strength"
-        case .highIntensityIntervalTraining: "HIIT"
-        case .snowSports: "Snow Sports"
-        case .climbing: "Climbing"
-        case .swimBikeRun: "Multisport"
-        case .other: "Other"
-        default: type.name.replacingOccurrences(of: "HKWorkoutActivityType", with: "")
-        }
+        WorkoutActivityCatalog.name(for: type.rawValue)
     }
 
     static func eventKind(_ type: HKWorkoutEventType) -> WorkoutEventKind {
@@ -136,11 +118,5 @@ enum HealthKitMappings {
             .percent()
         ])
         return candidates.first { quantity.is(compatibleWith: $0) }
-    }
-}
-
-private extension HKWorkoutActivityType {
-    var name: String {
-        String(describing: self)
     }
 }
