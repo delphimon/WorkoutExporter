@@ -100,24 +100,34 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section("Export defaults") {
-                    ForEach(ExportFormat.allCases) { format in
-                        Toggle(
-                            format.displayName,
-                            isOn: Binding(
-                                get: { settings.defaultFormats.contains(format) },
-                                set: { enabled in
-                                    if enabled {
-                                        settings.defaultFormats.insert(format)
-                                    } else {
-                                        settings.defaultFormats.remove(format)
-                                    }
-                                }
-                            )
-                        )
+                    Picker("Default export", selection: $settings.defaultExportPreset) {
+                        ForEach(ExportPreset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
                     }
-                    Toggle("Package as ZIP", isOn: $settings.packageAsZIP)
-                    Toggle("Include raw samples", isOn: $settings.includeRawSamples)
-                    Toggle("Include source/device metadata", isOn: $settings.includeSourceMetadata)
+                    Text(settings.defaultExportPreset.description)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if settings.defaultExportPreset == .custom {
+                        ForEach(ExportFormat.allCases) { format in
+                            Toggle(
+                                format.displayName,
+                                isOn: Binding(
+                                    get: { settings.defaultFormats.contains(format) },
+                                    set: { enabled in
+                                        if enabled {
+                                            settings.defaultFormats.insert(format)
+                                        } else {
+                                            settings.defaultFormats.remove(format)
+                                        }
+                                    }
+                                )
+                            )
+                        }
+                        Toggle("Package as ZIP", isOn: $settings.packageAsZIP)
+                        Toggle("Include raw samples", isOn: $settings.includeRawSamples)
+                        Toggle("Include source/device metadata", isOn: $settings.includeSourceMetadata)
+                    }
                     Picker("Filename", selection: $settings.filenameFormat) {
                         ForEach(ExportFilenameFormat.allCases, id: \.self) {
                             Text($0.label).tag($0)

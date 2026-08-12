@@ -6,6 +6,35 @@ struct CachedWorkoutExport: Codable, Hashable, Identifiable, Sendable {
     var workoutIDs: [UUID]
     var createdAt: Date
     var relativePath: String
+    var cacheKey: String
+
+    init(
+        id: UUID,
+        workoutIDs: [UUID],
+        createdAt: Date,
+        relativePath: String,
+        cacheKey: String = "legacy"
+    ) {
+        self.id = id
+        self.workoutIDs = workoutIDs
+        self.createdAt = createdAt
+        self.relativePath = relativePath
+        self.cacheKey = cacheKey
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, workoutIDs, createdAt, relativePath, cacheKey
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        workoutIDs = try container.decode([UUID].self, forKey: .workoutIDs)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        relativePath = try container.decode(String.self, forKey: .relativePath)
+        cacheKey = try container.decodeIfPresent(String.self, forKey: .cacheKey)
+            ?? "legacy"
+    }
 }
 
 @MainActor
@@ -58,7 +87,8 @@ final class WorkoutMetadataStore {
     func recordExport(
         workoutIDs: some Sequence<UUID>,
         fileURL: URL,
-        cachePackage: Bool = true
+        cachePackage: Bool = true,
+        cacheKey: String = "legacy"
     ) throws {
         let identifiers = Self.canonicalIDs(workoutIDs)
         guard !identifiers.isEmpty else { return }
@@ -75,14 +105,15 @@ final class WorkoutMetadataStore {
         exportedWorkoutIDs.formUnion(identifiers)
         if cachePackage {
             cachedExports.removeAll {
-                $0.workoutIDs == identifiers
+                ($0.workoutIDs == identifiers && $0.cacheKey == cacheKey)
                     || $0.relativePath == standardizedFile.lastPathComponent
             }
             cachedExports.append(CachedWorkoutExport(
                 id: UUID(),
                 workoutIDs: identifiers,
                 createdAt: Date(),
-                relativePath: standardizedFile.lastPathComponent
+                relativePath: standardizedFile.lastPathComponent,
+                cacheKey: cacheKey
             ))
             cachedExports.sort { $0.createdAt > $1.createdAt }
         }
@@ -106,10 +137,14 @@ final class WorkoutMetadataStore {
         }
     }
 
-    func cachedExport(for workoutIDs: some Sequence<UUID>) -> (record: CachedWorkoutExport, url: URL)? {
+    func cachedExport(
+        for workoutIDs: some Sequence<UUID>,
+        cacheKey: String? = nil
+    ) -> (record: CachedWorkoutExport, url: URL)? {
         let identifiers = Self.canonicalIDs(workoutIDs)
         guard !identifiers.isEmpty else { return nil }
-        for record in cachedExports where record.workoutIDs == identifiers {
+        for record in cachedExports where record.workoutIDs == identifiers
+                && (cacheKey == nil || record.cacheKey == cacheKey) {
             if let url = managedExportURL(for: record.relativePath),
                FileManager.default.fileExists(atPath: url.path) {
                 return (record, url)

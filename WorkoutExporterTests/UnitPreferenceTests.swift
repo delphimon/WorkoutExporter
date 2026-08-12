@@ -106,6 +106,25 @@ final class UnitPreferenceTests: XCTestCase {
     func testExportOptionsAndFilenamePreferencesRoundTrip() throws {
         var options = ExportOptions()
         options.filenameFormat = .activityDateIdentifier
+        options.unitScheme = .usCustomary
         XCTAssertEqual(try JSONDecoder().decode(ExportOptions.self, from: JSONEncoder().encode(options)), options)
+    }
+
+    @MainActor
+    func testBasicExportIsDefaultAndPresetPersists() throws {
+        let suiteName = "ExportPresetTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let initial = UserSettings(defaults: defaults)
+        XCTAssertEqual(initial.defaultExportPreset, .basic)
+        XCTAssertEqual(initial.defaultFormats, [.json, .gpx])
+        initial.defaultExportPreset = .detailed
+        initial.persist()
+
+        XCTAssertEqual(
+            UserSettings(defaults: defaults).defaultExportPreset,
+            .detailed
+        )
     }
 }

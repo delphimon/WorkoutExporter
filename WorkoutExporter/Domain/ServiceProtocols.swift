@@ -43,10 +43,36 @@ protocol WorkoutExporting: Sendable {
 
 struct WorkoutExportRequest: Sendable {
     let id: UUID
+    let summary: WorkoutSummary?
+    let locationTag: String?
+    let wasExported: Bool
     let load: @Sendable () async throws -> WorkoutDetail
 
-    static func loaded(_ detail: WorkoutDetail) -> WorkoutExportRequest {
-        WorkoutExportRequest(id: detail.id) { detail }
+    init(
+        id: UUID,
+        summary: WorkoutSummary? = nil,
+        locationTag: String? = nil,
+        wasExported: Bool = false,
+        load: @escaping @Sendable () async throws -> WorkoutDetail
+    ) {
+        self.id = id
+        self.summary = summary
+        self.locationTag = locationTag
+        self.wasExported = wasExported
+        self.load = load
+    }
+
+    static func loaded(
+        _ detail: WorkoutDetail,
+        locationTag: String? = nil,
+        wasExported: Bool = false
+    ) -> WorkoutExportRequest {
+        WorkoutExportRequest(
+            id: detail.id,
+            summary: detail.summary,
+            locationTag: locationTag,
+            wasExported: wasExported
+        ) { detail }
     }
 }
 
@@ -120,7 +146,7 @@ extension ExportPackageBuilding {
         progress: @escaping @Sendable (ExportProgress) async -> Void
     ) async throws -> URL {
         try await buildPackageResult(
-            for: workouts.map(WorkoutExportRequest.loaded),
+            for: workouts.map { WorkoutExportRequest.loaded($0) },
             options: options,
             to: directory,
             progress: progress
