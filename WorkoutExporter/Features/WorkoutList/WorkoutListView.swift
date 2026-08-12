@@ -291,8 +291,9 @@ private struct WorkoutRow: View {
                 HStack {
                     Label(
                         workout.activityName,
-                        systemImage: WorkoutActivityPresentation.symbolName(
-                            for: workout.activityName
+                        systemImage: WorkoutActivityCatalog.symbolName(
+                            for: workout.activityIdentifier,
+                            fallbackName: workout.activityName
                         )
                     )
                     .font(.headline)
@@ -428,15 +429,17 @@ private struct WorkoutRow: View {
             RowMetric(
                 icon: "clock",
                 value: MeasurementFormatterFactory.duration(workout.duration)
-            ),
-            RowMetric(
-                icon: "arrow.left.and.right",
-                value: MeasurementFormatterFactory.distance(
-                    workout.totalDistanceMeters,
-                    preference: units
-                )
             )
         ]
+        if let distance = workout.totalDistanceMeters {
+            values.append(RowMetric(
+                icon: "arrow.left.and.right",
+                value: MeasurementFormatterFactory.distance(
+                    distance,
+                    preference: units
+                )
+            ))
+        }
         if let heartRate = workout.averageHeartRateBPM {
             values.append(RowMetric(
                 icon: "heart.fill",

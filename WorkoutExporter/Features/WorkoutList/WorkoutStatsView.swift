@@ -58,26 +58,46 @@ struct WorkoutStatsView: View {
                 ForEach(groupedStats) { group in
                     Section {
                         LabeledContent("Activities", value: group.count.formatted())
-                        LabeledContent(
-                            "Total distance",
-                            value: MeasurementFormatterFactory.distance(
-                                group.totalDistanceMeters, preference: settings.distanceUnits))
                         LabeledContent("Total time", value: MeasurementFormatterFactory.duration(group.totalDuration))
-                        LabeledContent(
-                            "Total elevation gain",
-                            value: MeasurementFormatterFactory.elevation(
-                                group.totalElevationGainMeters, preference: settings.distanceUnits))
+                        if let distance = group.totalDistanceMeters {
+                            LabeledContent(
+                                "Total distance",
+                                value: MeasurementFormatterFactory.distance(
+                                    distance, preference: settings.distanceUnits))
+                        }
+                        if let elevation = group.totalElevationGainMeters {
+                            LabeledContent(
+                                "Total elevation gain",
+                                value: MeasurementFormatterFactory.elevation(
+                                    elevation, preference: settings.distanceUnits))
+                        }
+                        if let energy = group.totalActiveEnergyKilocalories {
+                            LabeledContent(
+                                "Total active energy",
+                                value: "\(Int(energy.rounded()).formatted()) kcal"
+                            )
+                        }
+                        if let heartRate = group.durationWeightedAverageHeartRateBPM {
+                            LabeledContent(
+                                "Time-weighted average heart rate",
+                                value: "\(Int(heartRate.rounded())) bpm"
+                            )
+                        }
                     } header: {
                         Label(
                             group.activityName,
-                            systemImage: WorkoutActivityPresentation.symbolName(for: group.activityName))
+                            systemImage: WorkoutActivityCatalog.symbolName(
+                                for: group.activityIdentifier,
+                                fallbackName: group.activityName
+                            ))
                     }
                 }
                 Section {
                     Text(
                         "Totals use the native HealthKit workout summaries for the current "
-                            + "filters. A missing distance or elevation value does not contribute "
-                            + "to that total; recorded values are never smoothed or replaced."
+                            + "filters. Distance, elevation, active energy, and heart rate appear "
+                            + "only when HealthKit recorded them. Missing values do not contribute; "
+                            + "recorded values are never smoothed or replaced."
                     ).font(.footnote).foregroundStyle(.secondary)
                     if hasMore {
                         Text("More workouts remain to be loaded, so these totals are not final.").font(.footnote)
@@ -157,23 +177,50 @@ struct WorkoutStatsView: View {
 
 enum WorkoutStatsCalculator {
     static func group(_ workouts: [WorkoutSummary]) -> [WorkoutActivityStats] {
-        Dictionary(grouping: workouts, by: \.activityName).map { activityName, workouts in
-            WorkoutActivityStats(
-                activityName: activityName, count: workouts.count,
+        Dictionary(grouping: workouts, by: \.activityIdentifier).map { identifier, workouts in
+            let fallbackName = workouts.first?.activityName
+            return WorkoutActivityStats(
+                activityIdentifier: identifier,
+                activityName: WorkoutActivityCatalog.name(
+                    for: identifier,
+                    fallbackName: fallbackName
+                ),
+                count: workouts.count,
                 totalDistanceMeters: sumIfPresent(workouts.compactMap(\.totalDistanceMeters)),
                 totalDuration: workouts.map(\.duration).reduce(0, +),
-                totalElevationGainMeters: sumIfPresent(workouts.compactMap(\.elevationGainMeters)))
+                totalElevationGainMeters: sumIfPresent(workouts.compactMap(\.elevationGainMeters)),
+                totalActiveEnergyKilocalories: sumIfPresent(
+                    workouts.compactMap(\.activeEnergyKilocalories)
+                ),
+                durationWeightedAverageHeartRateBPM: durationWeightedHeartRate(workouts)
+            )
         }.sorted { $0.activityName < $1.activityName }
     }
 
     private static func sumIfPresent(_ values: [Double]) -> Double? { values.isEmpty ? nil : values.reduce(0, +) }
+
+    private static func durationWeightedHeartRate(_ workouts: [WorkoutSummary]) -> Double? {
+        let recorded = workouts.compactMap { workout -> (Double, TimeInterval)? in
+            guard let heartRate = workout.averageHeartRateBPM,
+                  heartRate.isFinite,
+                  workout.duration.isFinite,
+                  workout.duration > 0 else { return nil }
+            return (heartRate, workout.duration)
+        }
+        let duration = recorded.reduce(0) { $0 + $1.1 }
+        guard duration > 0 else { return nil }
+        return recorded.reduce(0) { $0 + ($1.0 * $1.1) } / duration
+    }
 }
 
 struct WorkoutActivityStats: Identifiable, Equatable {
-    var id: String { activityName }
+    var id: UInt { activityIdentifier }
+    var activityIdentifier: UInt
     var activityName: String
     var count: Int
     var totalDistanceMeters: Double?
     var totalDuration: TimeInterval
     var totalElevationGainMeters: Double?
+    var totalActiveEnergyKilocalories: Double?
+    var durationWeightedAverageHeartRateBPM: Double?
 }

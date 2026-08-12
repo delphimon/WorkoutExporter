@@ -1,9 +1,52 @@
+import HealthKit
 import UIKit
 import XCTest
 @testable import WorkoutExporter
 
 @MainActor
 final class WorkoutPresentationTests: XCTestCase {
+    func testCatalogNamesEveryPublicHealthKitWorkoutActivity() {
+        XCTAssertEqual(WorkoutActivityCatalog.all.count, 86)
+        XCTAssertTrue(WorkoutActivityCatalog.all.allSatisfy {
+            !$0.name.localizedCaseInsensitiveContains("rawValue")
+                && !$0.symbolName.isEmpty
+        })
+        XCTAssertEqual(WorkoutActivityCatalog.name(for: 48), "Tennis")
+        XCTAssertEqual(WorkoutActivityCatalog.name(for: 57), "Yoga")
+        XCTAssertEqual(WorkoutActivityCatalog.name(for: 80), "Cooldown")
+        XCTAssertEqual(WorkoutActivityCatalog.name(for: 84), "Underwater Diving")
+        XCTAssertEqual(WorkoutActivityCatalog.name(for: 999), "Activity 999")
+        XCTAssertEqual(
+            WorkoutActivityCatalog.name(for: 999, fallbackName: "Future Sport"),
+            "Future Sport"
+        )
+        XCTAssertEqual(
+            WorkoutActivityCatalog.name(for: 999, fallbackName: "(rawValue: 999)"),
+            "Activity 999"
+        )
+    }
+
+    func testHealthKitMappingUsesCatalogNamesForPreviouslyRawCases() throws {
+        func name(_ rawValue: UInt) throws -> String {
+            HealthKitMappings.activityName(
+                try XCTUnwrap(HKWorkoutActivityType(rawValue: rawValue))
+            )
+        }
+
+        XCTAssertEqual(try name(48), "Tennis")
+        XCTAssertEqual(try name(57), "Yoga")
+        XCTAssertEqual(try name(80), "Cooldown")
+        XCTAssertEqual(try name(84), "Underwater Diving")
+    }
+
+    func testCatalogProvidesActivityAppropriateSymbols() {
+        XCTAssertEqual(WorkoutActivityCatalog.symbolName(for: 48), "sportscourt")
+        XCTAssertEqual(WorkoutActivityCatalog.symbolName(for: 57), "figure.mind.and.body")
+        XCTAssertEqual(WorkoutActivityCatalog.symbolName(for: 84), "water.waves")
+        XCTAssertEqual(WorkoutActivityCatalog.symbolName(for: 13), "bicycle")
+        XCTAssertEqual(WorkoutActivityCatalog.symbolName(for: 50), "dumbbell.fill")
+    }
+
     func testActivitySymbolsMatchCommonWorkoutTypes() {
         XCTAssertEqual(
             WorkoutActivityPresentation.symbolName(for: "Hiking"),
