@@ -98,8 +98,10 @@ Pull-request handoff status:
 ### #45 Activity Archive Mac app and vault onboarding
 
 Working branch: `agent/activity-archive-mac-app` (stacked on pull request #47 until #44 merges)
+Pull request: [#48](https://github.com/delphimon/WorkoutExporter/pull/48)
+Implementation commit: `5912b46`
 
-Implemented locally:
+Implemented in #48:
 
 - Separate `ActivityArchive` macOS app target with bundle identifier
   `com.delphimon.ActivityArchive`, its own Info.plist, sandbox/bookmark entitlements, hardened
@@ -127,16 +129,16 @@ Current automated evidence with Xcode 27 Beta on macOS 27:
 - Strict Swift formatting, plist validation, whitespace validation, and unsafe-force-operation scan
   pass for the new Mac code.
 
-Before opening the #45 pull request:
+Pull-request handoff status:
 
-1. Re-run the complete Mac scheme and hardened Release verification after final documentation.
-2. Run the existing iPhone regression suite to prove the additional project targets do not regress
-   Activity Manager.
-3. Review the staged diff and exclude the user-owned `WorkoutExporter.xcscheme` modification.
-4. Commit and push this stacked branch, open a PR based on `agent/activity-archive-vault`, and add
-   exact validation evidence to #45.
-5. After #47 merges, retarget the #45 PR to `main`, update the ledger, and only merge with explicit
-   user approval.
+1. The final complete Mac scheme and hardened Release verification passed.
+2. The existing iPhone regression suite passed, proving the new targets do not regress Activity
+   Manager.
+3. Staged-diff review excluded the user-owned `WorkoutExporter.xcscheme` modification.
+4. The implementation and documentation were signed, committed, pushed, and opened as stacked pull
+   request #48 with exact validation evidence.
+5. Remaining action: after #47 merges, retarget #48 to `main`, verify its diff/status, and obtain
+   explicit user approval before merging it.
 
 ## Remaining P0 sequence
 
