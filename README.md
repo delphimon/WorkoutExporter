@@ -96,3 +96,7 @@ See [TESTING.md](TESTING.md) for real-device checks and simulator limitations.
 - `Packages/ActivityArchiveCore/`: shared, platform-neutral `.activitypkg` models, identity, validation, secure ZIP reader/writer, and migration contract for iPhone and Mac targets
 
 Related documentation: [architecture](ARCHITECTURE.md), [export format](EXPORT_FORMAT.md), [testing](TESTING.md), [known limitations](KNOWN_LIMITATIONS.md).
+
+The cross-issue implementation sequence, completed milestones, validation evidence, and exact
+handoff state for the iPhone/Mac expansion are maintained in
+[ACTIVITY_ARCHIVE_ROADMAP.md](ACTIVITY_ARCHIVE_ROADMAP.md).

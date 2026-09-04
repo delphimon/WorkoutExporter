@@ -28,6 +28,36 @@ Activity Package without rewriting the original bytes.
 `ActivityPackageIdentity.stablePackageID(for:)` derives the persistent package ID from the stable
 source activity ID. Later revisions reuse that ID and increment `packageRevision`.
 
+## Mac vault engine
+
+The `ActivityArchiveVault` product supplies the platform-neutral storage layer used by the Mac app.
+It creates a user-selected vault with this stable layout:
+
+```text
+ActivityArchive/
+  archive.sqlite
+  objects/sha256/ab/cd/<hash>
+  packages/{incoming,processed,rejected}/
+  exports/
+  backups/
+  logs/
+```
+
+Imported Activity Packages, GPX files, and GeoJSON files are streamed into immutable SHA-256 object
+storage before parsing. Their original bytes—including foreign fields—remain the source evidence.
+SQLite stores only the searchable catalog, exact source-reported statistics and units, route bounds,
+separate activity-type and title fields, completeness, job history, and warnings. Reimporting the
+same logical revision is idempotent; a different payload
+claiming an existing package ID and revision is retained as an object but rejected as a revision
+conflict.
+
+The vault uses WAL with full synchronization and transactional schema migrations. Managed
+directories are private to the user, database files are mode `0600`, object files are read-only,
+and internal symbolic links are rejected. Startup recovery removes abandoned partial object files
+and marks interrupted jobs as rejected. `integrityCheck()` verifies every cataloged object hash plus
+SQLite integrity. The app should still place the vault in a user-controlled, backed-up location;
+encryption at rest is provided by the selected volume (for example, FileVault), not by this layer.
+
 ## Validation
 
 Use the Xcode Beta toolchain used by the applications:
