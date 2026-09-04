@@ -10,6 +10,8 @@ SwiftUI views → observable view models → service protocols
                            HealthKit-free domain model
                               ↙                 ↘
                        Metric engine        Export writers
+                                                  ↓
+                                      ActivityArchiveCore package
 ```
 
 The UI does not execute HealthKit queries. `HealthKitClient`, `WorkoutRepository`, `WorkoutRouteRepository`, `WorkoutMetricCalculating`, `WorkoutExporting`, and `ExportPackageBuilding` define test seams. HealthKit objects are normalized before entering the metric or export layers.
@@ -20,6 +22,7 @@ The UI does not execute HealthKit queries. `HealthKitClient`, `WorkoutRepository
 - Query descriptors use Swift concurrency.
 - UI models are `@MainActor`.
 - Package generation is isolated in `ExportPackageBuilder`, an actor that keeps file generation, hashing, and archiving off the main actor.
+- Detailed exports use the platform-neutral `ActivityArchiveCore` writer and validator. Route and metric payloads are streamed as JSON Lines, while a supplemental GPX projection remains available for interoperability.
 - Export APIs report format-level progress and check cancellation while processing route points, samples, hashes, and archive chunks.
 - Multiple-workout package generation is intentionally bounded to one workout at a time to avoid simultaneous large route series.
 - Workout-list route presentations are loaded lazily, limited to two concurrent
@@ -47,7 +50,7 @@ Recorded route coordinates, altitude, and speed remain unchanged.
 
 Existing HealthKit workout values remain unchanged and are shown as the primary workout values. Elevation gain is read directly from `HKMetadataKeyElevationAscended` when present. Route-filtered elevation and route-derived distance are supplemental values with separate labels and provenance; they never replace or modify the workout activity’s values.
 
-These algorithms are Workout Exporter algorithms, not reconstructions of Apple Fitness.
+These algorithms are Activity Manager algorithms, not reconstructions of Apple Fitness.
 
 ## Route presentation and place names
 
@@ -79,6 +82,6 @@ removed after 24 hours unless the user explicitly saves or shares them. An
 expired or missing file removes only its cached-package reference; exported
 status and a manual location tag remain independent.
 
-## Future macOS companion
+## macOS companion boundary
 
-The versioned JSON envelope and package manifest depend only on Codable domain structures. A macOS importer can decode packages without HealthKit. FIT support can be added behind `WorkoutExporting` after a maintained, correctly licensed implementation is identified and tested.
+The iPhone and planned Activity Archive Mac target live in this repository but have separate app targets, bundle identifiers, signing, and release lifecycles. `Packages/ActivityArchiveCore` is the shared boundary for package identity, schema, validation, safe ZIP I/O, provenance, and migrations; it contains no HealthKit or UI dependency. FIT support can be added behind `WorkoutExporting` after a maintained, correctly licensed implementation is identified and tested.

@@ -2,7 +2,9 @@
 
 ## Automated tests
 
-The unit target covers route distance and point series, invalid points, GPS jumps, moving/stopped thresholds, pause handling, native-versus-derived elevation, heart-rate statistics and zones, distance/time splits, units, list filters/sorts/pagination, exported-status persistence, location tags, cached-package validation, filenames, CSV escaping/line endings, JSON compatibility, GPX/TCX structure, indexed heart-rate matching, CRC-32, streaming SHA-256, ZIP signatures, progress/cancellation/partial completion, off-main export execution, and manifest integrity.
+The unit target covers route distance and point series, invalid points, GPS jumps, moving/stopped thresholds, pause handling, native-versus-derived elevation, heart-rate statistics and zones, distance/time splits, units, list filters/sorts/pagination, exported-status persistence, location tags, cached-package validation, filenames, CSV escaping/line endings, JSON compatibility, GPX/TCX structure, indexed heart-rate matching, CRC-32, streaming SHA-256, ZIP signatures, progress/cancellation/partial completion, off-main export execution, and manifest integrity. Activity Package integration tests validate stable identity, exact elevation and biometric source values and units, authoritative versus supplemental route roles, missing-route states, sensitive-data exclusions, nonredundant presets, and multiple-workout wrapping.
+
+The shared `ActivityArchiveCore` package separately tests round trips, stable content identity, streaming file payloads, schema rejection, tamper detection, file limits, traversal/absolute paths, Unicode and case-folding collisions, undeclared files, and source-versus-normalized value separation.
 
 The UI target covers onboarding/privacy copy, synthetic-data entry, workout list/filter navigation, detail loading, export configuration, batch selection, exported-status filtering and clearing, cached-package sharing, and manual location tags without activity-type renaming.
 
@@ -48,7 +50,7 @@ Use an iPhone paired with an Apple Watch containing workouts:
 2. Request Health access and test full, limited-window, and denied selections.
 3. Compare workouts with zero, one, and multiple route objects.
 4. Verify long outdoor workout map and chart responsiveness.
-5. Export each format and open it in at least two independent tools.
+5. Export Basic, Detailed, and representative Custom formats. Validate the Activity Package with the shared reader and open its supplemental GPX in at least two independent tools.
 6. Verify route gaps, pause events, interval heart-rate samples, source/device metadata, and timestamps.
 7. Save through Files, share through AirDrop, cancel a large batch, and verify no background upload occurs.
 

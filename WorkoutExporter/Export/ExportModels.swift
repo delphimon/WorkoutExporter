@@ -24,7 +24,7 @@ enum ExportPreset: String, Codable, CaseIterable, Identifiable, Sendable {
         case .basic:
             "One spreadsheet-ready CSV with recorded totals and key metrics."
         case .detailed:
-            "Full biometric and sample data in JSON, plus an interoperable GPX track when a route is available."
+            "One verified Activity Package with source evidence, biometrics, samples, provenance, and an interoperable GPX track when available."
         case .custom:
             "Choose additional data and interoperability formats for a specific use."
         }
@@ -33,6 +33,7 @@ enum ExportPreset: String, Codable, CaseIterable, Identifiable, Sendable {
 
 enum ExportFormat: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case summary
+    case activityPackage
     case json
     case csv
     case gpx
@@ -42,6 +43,7 @@ enum ExportFormat: String, Codable, CaseIterable, Hashable, Identifiable, Sendab
     var displayName: String {
         switch self {
         case .summary: "Summary CSV"
+        case .activityPackage: "Activity Package"
         case .json: "Canonical JSON"
         case .csv: "Detailed CSV tables"
         case .gpx: "GPX route"
@@ -83,14 +85,14 @@ struct ExportOptions: Codable, Hashable, Sendable {
         filenameFormat: ExportFilenameFormat = .dateActivityIdentifier
     ) -> ExportOptions {
         ExportOptions(
-            formats: [.json, .gpx],
+            formats: [.activityPackage],
             includeRawSamples: true,
             includeDerivedMetrics: true,
             includeHeartRate: true,
             includeRoute: true,
             includeSourceAndDevice: true,
             filenameFormat: filenameFormat,
-            packageAsZIP: true,
+            packageAsZIP: false,
             unitScheme: unitScheme
         )
     }
@@ -114,6 +116,7 @@ struct ExportOptions: Codable, Hashable, Sendable {
 struct ExportProgress: Equatable, Sendable {
     enum Phase: String, Equatable, Sendable {
         case preparing
+        case activityPackage
         case summary
         case json
         case csv
@@ -132,6 +135,7 @@ struct ExportProgress: Equatable, Sendable {
     var message: String {
         let action = switch phase {
         case .preparing: "Preparing workout data"
+        case .activityPackage: "Writing Activity Package"
         case .summary: "Writing summary CSV"
         case .json: "Writing JSON"
         case .csv: "Writing CSV files"

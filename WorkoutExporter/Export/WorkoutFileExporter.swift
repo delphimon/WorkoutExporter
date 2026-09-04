@@ -17,6 +17,8 @@ struct WorkoutFileExporter: WorkoutExporting {
                 switch format {
                 case .summary:
                     continue
+                case .activityPackage:
+                    continue
                 case .json:
                     let url = directory.appending(path: "workout.json")
                     try ExportUtilities.writeProtected(json(detail), to: url)
@@ -75,6 +77,10 @@ struct WorkoutFileExporter: WorkoutExporting {
         try rendered { try writeGPX(detail, to: $0) }
     }
 
+    func writeGPXFile(_ detail: WorkoutDetail, to url: URL) throws {
+        try writeFile(to: url) { try writeGPX(detail, to: $0) }
+    }
+
     func tcx(_ detail: WorkoutDetail) throws -> Data {
         try rendered { try writeTCX(detail, to: $0) }
     }
@@ -99,7 +105,7 @@ struct WorkoutFileExporter: WorkoutExporting {
         try writer.write(
             """
             <?xml version="1.0" encoding="UTF-8"?>
-            <gpx version="1.1" creator="Workout Exporter" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
+            <gpx version="1.1" creator="Activity Manager" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
               <metadata><name>\(ExportUtilities.xml(detail.summary.activityName))</name><time>\(ExportUtilities.date(detail.summary.startDate))</time></metadata>
               <trk><name>\(ExportUtilities.xml(detail.summary.activityName))</name>
 
@@ -395,6 +401,7 @@ private extension ExportFormat {
     var progressPhase: ExportProgress.Phase {
         switch self {
         case .summary: .summary
+        case .activityPackage: .activityPackage
         case .json: .json
         case .csv: .csv
         case .gpx: .gpx

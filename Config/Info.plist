@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Workout Exporter</string>
+	<string>Activity Manager</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -21,7 +21,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Workout Exporter reads workouts and associated sensor data so you can inspect and export them. Data stays on this device unless you explicitly share it.</string>
+	<string>Activity Manager reads workouts and associated sensor data so you can inspect and export them. Data stays on this device unless you explicitly share it.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -32,6 +32,28 @@
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Activity Package</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.delphimon.activity-archive.package</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>activitypkg</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/vnd.activityarchive.package+zip</string>
+			</dict>
+		</dict>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

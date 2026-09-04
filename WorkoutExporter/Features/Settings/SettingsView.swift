@@ -115,16 +115,14 @@ struct SettingsView: View {
                                 isOn: Binding(
                                     get: { settings.defaultFormats.contains(format) },
                                     set: { enabled in
-                                        if enabled {
-                                            settings.defaultFormats.insert(format)
-                                        } else {
-                                            settings.defaultFormats.remove(format)
-                                        }
+                                        updateDefaultFormat(format, enabled: enabled)
                                     }
                                 )
                             )
                         }
-                        Toggle("Package as ZIP", isOn: $settings.packageAsZIP)
+                        if !settings.defaultFormats.contains(.activityPackage) {
+                            Toggle("Package as ZIP", isOn: $settings.packageAsZIP)
+                        }
                         Toggle("Include raw samples", isOn: $settings.includeRawSamples)
                         Toggle("Include source/device metadata", isOn: $settings.includeSourceMetadata)
                     }
@@ -255,6 +253,18 @@ struct SettingsView: View {
         }
     }
 
+    private func updateDefaultFormat(_ format: ExportFormat, enabled: Bool) {
+        if enabled, format == .activityPackage {
+            settings.defaultFormats = [.activityPackage]
+            settings.packageAsZIP = false
+        } else if enabled {
+            settings.defaultFormats.remove(.activityPackage)
+            settings.defaultFormats.insert(format)
+        } else {
+            settings.defaultFormats.remove(format)
+        }
+    }
+
     private func requestHealthAccess() {
         isRequestingHealthAccess = true
         healthAccessMessage = nil
@@ -300,7 +310,7 @@ private struct PrivacyView: View {
                     Text("Health data is read and processed locally on this iPhone.")
                     Text("Exports are created only when you request them.")
                     Text("You choose where exports are sent using Apple's share sheet.")
-                    Text("Workout Exporter does not transmit workout data to the developer.")
+                    Text("Activity Manager does not transmit workout data to the developer.")
                 }
                 Section("Not included") {
                     Text("No analytics SDK, advertising SDK, remote account, automatic cloud upload, or background transmission.")

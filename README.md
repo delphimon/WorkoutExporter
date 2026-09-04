@@ -1,6 +1,6 @@
-# Workout Exporter
+# Activity Manager and Activity Archive
 
-Workout Exporter is a local-first iPhone app for browsing Apple Health workouts, inspecting route and sensor detail, calculating transparent derived metrics, and exporting documented files for use on any platform.
+Activity Manager is a local-first iPhone app for browsing Apple Health workouts, inspecting route and sensor detail, calculating transparent derived metrics, and exporting durable Activity Packages. The same repository also contains the shared core for the planned Activity Archive Mac companion app. Existing Xcode target and bundle identifiers retain the `WorkoutExporter` name so upgrades preserve installed app data.
 
 > Screenshot capture slots and the real-device QA checklist are in [`Screenshots/README.md`](Screenshots/README.md).
 
@@ -54,7 +54,8 @@ HealthKit cannot prove per-type read approval. “No accessible workouts” may 
 - Heart-rate zone detail with explicit formulas, inputs, BPM boundaries, and an optional age-based maximum-HR estimate from Health date of birth
 - Full date filters and grouped filtered totals for distance, duration, and native elevation gain
 - HealthKit workout values preserved unchanged, with supplemental derived values kept separate
-- JSON, five CSV tables, GPX 1.1, TCX, and ZIP packages
+- A nonredundant detailed Activity Package containing exact source evidence, biometric samples, provenance, and a supplemental GPX 1.1 route when available
+- Summary CSV plus customizable JSON, detailed CSV tables, GPX, and TCX interoperability exports
 - SHA-256 manifest, schema documentation, package README, safe filenames
 - Standard share sheet / Files handoff
 - Persistent exported-status badges, an unexported-only filter, and reusable temporary packages
@@ -88,9 +89,10 @@ See [TESTING.md](TESTING.md) for real-device checks and simulator limitations.
 - `App/`: dependency composition and application entry point
 - `Domain/`: HealthKit-independent models, units, typed errors, metrics
 - `HealthKit/`: live adapters, centralized requested types, synthetic client
-- `Export/`: writers, package builder, manifest hashing, ZIP
+- `Export/`: Activity Package adapter, interoperability writers, package builder, manifest hashing, ZIP
 - `Features/`: authorization, list, detail, export, and settings UI
 - `Persistence/`: user settings, export history, cached-package references, and location tags
 - `WorkoutExporterTests/`: deterministic unit and integration coverage
+- `Packages/ActivityArchiveCore/`: shared, platform-neutral `.activitypkg` models, identity, validation, secure ZIP reader/writer, and migration contract for iPhone and Mac targets
 
 Related documentation: [architecture](ARCHITECTURE.md), [export format](EXPORT_FORMAT.md), [testing](TESTING.md), [known limitations](KNOWN_LIMITATIONS.md).

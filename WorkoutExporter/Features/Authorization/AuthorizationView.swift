@@ -19,7 +19,7 @@ struct AuthorizationView: View {
                     .font(.largeTitle.bold())
 
                 Text(
-                    "Workout Exporter reads workouts and associated route, heart-rate, "
+                    "Activity Manager reads workouts and associated route, heart-rate, "
                         + "energy, distance, cadence, power, and other workout data from "
                         + "Apple Health. If available, date of birth is used locally to "
                         + "estimate maximum heart rate."

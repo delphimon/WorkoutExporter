@@ -1,6 +1,6 @@
 # Privacy
 
-Workout Exporter is local-first:
+Activity Manager is local-first:
 
 - Health data is read and processed locally on the iPhone.
 - If Health grants access to date of birth, it is used in memory to calculate
@@ -10,7 +10,9 @@ Workout Exporter is local-first:
   calculation remains reproducible.
 - Route coordinates are provided to Apple's MapKit services when the app renders
   a route thumbnail or requests a nearby trail, physical feature, or neighborhood
-  name. Results are labeled as Apple Maps suggestions and cached only in memory.
+  name. Results are labeled as Apple Maps suggestions. Rendered thumbnails and
+  suggestions may be cached on device for up to 30 days in a protected,
+  backup-excluded cache capped at 200 entries.
 - Exports are created only after an explicit user action.
 - The user chooses the destination through Apple's share sheet.
 - No workout data is transmitted to the developer.
@@ -25,6 +27,9 @@ Workout Exporter is local-first:
 - A manual location tag changes only the local secondary label. It does not
   rename the HealthKit activity type or alter exported data.
 - Source and device metadata can be excluded from exports.
+- Detailed Activity Packages can contain health samples and precise route
+  coordinates. They are created only on request, protected while on device,
+  and shared only through a destination the user selects.
 
 The privacy manifest declares no tracking or developer-collected data. It
 declares the `UserDefaults` required-reason API with reason `CA92.1`. This must

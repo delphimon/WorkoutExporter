@@ -118,7 +118,7 @@ final class UnitPreferenceTests: XCTestCase {
 
         let initial = UserSettings(defaults: defaults)
         XCTAssertEqual(initial.defaultExportPreset, .basic)
-        XCTAssertEqual(initial.defaultFormats, [.json, .gpx])
+        XCTAssertEqual(initial.defaultFormats, [.activityPackage])
         initial.defaultExportPreset = .detailed
         initial.persist()
 
@@ -126,5 +126,22 @@ final class UnitPreferenceTests: XCTestCase {
             UserSettings(defaults: defaults).defaultExportPreset,
             .detailed
         )
+    }
+
+    @MainActor
+    func testExistingCustomExportFormatsSurviveActivityPackageUpgrade() throws {
+        let suiteName = "ExportFormatMigrationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            try JSONEncoder().encode(Set([ExportFormat.json, .gpx])),
+            forKey: "defaultFormats"
+        )
+        defaults.set(ExportPreset.custom.rawValue, forKey: "defaultExportPreset")
+
+        let settings = UserSettings(defaults: defaults)
+
+        XCTAssertEqual(settings.defaultExportPreset, .custom)
+        XCTAssertEqual(settings.defaultFormats, [.json, .gpx])
     }
 }
