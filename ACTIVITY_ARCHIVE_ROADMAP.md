@@ -48,13 +48,15 @@ The detailed requirements are tracked by umbrella issue
 - Still open by design: durable new/changed/revision collection belongs to #38; live HealthKit and
   physical-device validation belongs to #40.
 
-## Work in progress
+## Pull request awaiting review
 
 ### #44 durable vault and idempotent import engine
 
 Working branch: `agent/activity-archive-vault`
+Pull request: [#47](https://github.com/delphimon/WorkoutExporter/pull/47)
+Implementation commit: `cf4dac6`
 
-Implemented locally:
+Implemented in #47:
 
 - `ActivityArchiveVault` Swift package product for macOS and iOS.
 - Documented vault layout with private managed directories.
@@ -84,14 +86,14 @@ Current automated evidence:
   Xcode Beta.
 - Strict Swift formatting, whitespace validation, and unsafe-force-operation scan pass for new code.
 
-Before opening the #44 pull request:
+Pull-request handoff status:
 
-1. Re-run the package suite and iOS cross-compile after the final schema edits.
-2. Re-run strict formatting and `git diff --check`.
-3. Review the staged diff to prove the user-owned Xcode scheme change is excluded.
-4. Commit only `Packages/ActivityArchiveCore` and this ledger.
-5. Push the branch, open a PR linked to #44, and add exact validation evidence to #44.
-6. Do not merge that PR without explicit user approval.
+1. Final package suite and iOS cross-compile passed after the schema edits.
+2. Strict formatting and `git diff --check` passed.
+3. Staged-diff review proved the user-owned Xcode scheme change was excluded.
+4. The implementation and documentation were signed, committed, and pushed.
+5. Pull request #47 is linked to #44 and contains the exact validation evidence.
+6. Remaining action: review GitHub checks and obtain explicit user approval before merging #47.
 
 ## Remaining P0 sequence
 
