@@ -39,7 +39,7 @@ final class UserSettings {
            let formats = try? JSONDecoder().decode(Set<ExportFormat>.self, from: data) {
             defaultFormats = formats
         } else {
-            defaultFormats = [.json, .gpx]
+            defaultFormats = [.activityPackage]
         }
         if let data = defaults.data(forKey: Keys.metricSettings),
            let decoded = try? JSONDecoder().decode(MetricCalculationSettings.self, from: data) {

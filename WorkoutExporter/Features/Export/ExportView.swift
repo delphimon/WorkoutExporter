@@ -74,7 +74,9 @@ struct ExportView: View {
                             ForEach(ExportFormat.allCases) { format in
                                 Toggle(format.displayName, isOn: binding(for: format))
                             }
-                            Toggle("Package as ZIP", isOn: $options.packageAsZIP)
+                            if !options.formats.contains(.activityPackage) {
+                                Toggle("Package as ZIP", isOn: $options.packageAsZIP)
+                            }
                         }
                         Section("Data") {
                             Toggle("Raw samples", isOn: $options.includeRawSamples)
@@ -97,11 +99,11 @@ struct ExportView: View {
                                 )
                             } else {
                                 Label(
-                                    "Heart rate, biometrics, samples, and provenance in JSON",
+                                    "Heart rate, biometrics, samples, and provenance",
                                     systemImage: "waveform.path.ecg"
                                 )
                                 Label("GPX track when GPS data is available", systemImage: "map")
-                                Label("Canonical SI units with each value", systemImage: "ruler")
+                                Label("One verified Activity Package per workout", systemImage: "shippingbox")
                             }
                         }
                     }
@@ -109,7 +111,7 @@ struct ExportView: View {
                         Text(
                             preset == .basic
                                 ? "Displayed-unit values are converted directly from recorded workout totals. Missing values stay blank."
-                                : "Detailed measurements retain their canonical HealthKit or SI units. The app does not smooth, replace, or invent workout values."
+                                : "Recorded values and source units are preserved exactly. Any normalized or derived values are separate and labeled; the app does not replace source evidence."
                         )
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -170,7 +172,15 @@ struct ExportView: View {
         Binding(
             get: { options.formats.contains(format) },
             set: { isOn in
-                if isOn { options.formats.insert(format) } else { options.formats.remove(format) }
+                if isOn, format == .activityPackage {
+                    options.formats = [.activityPackage]
+                    options.packageAsZIP = false
+                } else if isOn {
+                    options.formats.remove(.activityPackage)
+                    options.formats.insert(format)
+                } else {
+                    options.formats.remove(format)
+                }
             }
         )
     }

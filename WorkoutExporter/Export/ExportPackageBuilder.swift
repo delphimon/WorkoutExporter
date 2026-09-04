@@ -3,13 +3,16 @@ import Foundation
 actor ExportPackageBuilder: ExportPackageBuilding {
     private let exporter: any WorkoutExporting
     private let zipWriter: ZIPArchiveWriter
+    private let activityPackageAdapter: ActivityPackageWorkoutAdapter
 
     init(
         exporter: any WorkoutExporting = WorkoutFileExporter(),
-        zipWriter: ZIPArchiveWriter = ZIPArchiveWriter()
+        zipWriter: ZIPArchiveWriter = ZIPArchiveWriter(),
+        activityPackageAdapter: ActivityPackageWorkoutAdapter = ActivityPackageWorkoutAdapter()
     ) {
         self.exporter = exporter
         self.zipWriter = zipWriter
+        self.activityPackageAdapter = activityPackageAdapter
     }
 
     func buildPackageResult(
@@ -20,6 +23,19 @@ actor ExportPackageBuilder: ExportPackageBuilding {
     ) async throws -> ExportPackageResult {
         do {
             guard !requests.isEmpty else { throw WorkoutExporterError.noAccessibleData }
+            if options.formats == [.activityPackage] {
+                return try await buildActivityPackages(
+                    for: requests,
+                    options: options,
+                    to: directory,
+                    progress: progress
+                )
+            }
+            if options.formats.contains(.activityPackage) {
+                throw WorkoutExporterError.encodingFailure(
+                    "Activity Package is already a complete export. Select it by itself, or choose legacy formats instead."
+                )
+            }
             if options.formats == [.summary] {
                 return try await buildSummaryOnlyPackage(
                     for: requests,
@@ -173,6 +189,102 @@ actor ExportPackageBuilder: ExportPackageBuilding {
             throw error
         } catch {
             throw WorkoutExporterError.fileWriteFailure(error.localizedDescription)
+        }
+    }
+
+    private func buildActivityPackages(
+        for requests: [WorkoutExportRequest],
+        options: ExportOptions,
+        to directory: URL,
+        progress: @escaping @Sendable (ExportProgress) async -> Void
+    ) async throws -> ExportPackageResult {
+        let staging = directory.appending(
+            path: "ActivityManager-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        try ExportUtilities.createProtectedDirectory(at: staging)
+        defer { try? FileManager.default.removeItem(at: staging) }
+
+        var completed: [(id: UUID, url: URL)] = []
+        var failures: [String] = []
+        for (index, request) in requests.enumerated() {
+            try Task.checkCancellation()
+            await progress(update(.preparing, index: index, total: requests.count))
+            do {
+                let detail = Self.filtered(try await request.load(), options: options)
+                let filename = ExportUtilities.safeFilename(
+                    for: detail.summary,
+                    format: options.filenameFormat
+                )
+                let destination = staging.appending(path: "\(filename).activitypkg")
+                await progress(update(.activityPackage, index: index, total: requests.count))
+                try activityPackageAdapter.write(
+                    detail,
+                    locationTag: options.includeRoute ? request.locationTag : nil,
+                    options: options,
+                    to: destination
+                )
+                completed.append((request.id, destination))
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as WorkoutExporterError where error == .cancelled {
+                throw error
+            } catch {
+                failures.append("Workout \(request.id.uuidString): \(error.localizedDescription)")
+                await progress(update(.partialFailure, index: index, total: requests.count))
+                if requests.count == 1 { throw error }
+            }
+            if index.isMultiple(of: 4) { await Task.yield() }
+        }
+
+        guard !completed.isEmpty else {
+            throw WorkoutExporterError.fileWriteFailure(failures.joined(separator: "\n"))
+        }
+
+        await progress(update(.finalizing, index: requests.count - 1, total: requests.count))
+        if completed.count == 1, failures.isEmpty {
+            let destination = directory.appending(path: completed[0].url.lastPathComponent)
+            try replaceItem(at: destination, with: completed[0].url)
+            try ExportUtilities.applyCompleteFileProtection(to: destination)
+            return ExportPackageResult(
+                url: destination,
+                exportedWorkoutIDs: [completed[0].id]
+            )
+        }
+
+        if !failures.isEmpty {
+            let report = (
+                ["Some selected workouts could not be exported. Completed Activity Packages remain usable.", ""]
+                    + failures
+            ).joined(separator: "\n")
+            try ExportUtilities.writeProtected(
+                Data(report.utf8),
+                to: staging.appending(path: "export-warnings.txt")
+            )
+        }
+        await progress(update(.archiving, index: requests.count - 1, total: requests.count))
+        let packageName = "activity-packages-\(ExportUtilities.date(Date()).prefix(10))-\(completed.count)-workouts.zip"
+        let destination = directory.appending(path: packageName)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        let files = try recursiveFiles(in: staging).map { url -> (String, URL) in
+            let relative = url.path.replacingOccurrences(of: staging.path + "/", with: "")
+            return (relative, url)
+        }
+        try zipWriter.write(files: files, to: destination)
+        try ExportUtilities.applyCompleteFileProtection(to: destination)
+        return ExportPackageResult(
+            url: destination,
+            exportedWorkoutIDs: Set(completed.map(\.id))
+        )
+    }
+
+    private func replaceItem(at destination: URL, with source: URL) throws {
+        if FileManager.default.fileExists(atPath: destination.path) {
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: source)
+        } else {
+            try FileManager.default.moveItem(at: source, to: destination)
         }
     }
 
@@ -402,6 +514,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
 
     private func contentType(_ pathExtension: String) -> String {
         switch pathExtension.lowercased() {
+        case "activitypkg": "application/vnd.activityarchive.package+zip"
         case "json": "application/json"
         case "csv": "text/csv"
         case "gpx": "application/gpx+xml"
@@ -419,6 +532,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         return Set(requested.filter { format in
             switch format {
             case .summary: names.contains("workouts.csv")
+            case .activityPackage: names.contains { $0.hasSuffix(".activitypkg") }
             case .json: names.contains("workout.json")
             case .csv: names.contains { $0.hasSuffix(".csv") }
             case .gpx: names.contains("route.gpx")
@@ -433,7 +547,7 @@ actor ExportPackageBuilder: ExportPackageBuilding {
         emittedFormats: Set<ExportFormat>
     ) -> String {
         """
-        Workout Exporter package
+        Activity Manager package
         Schema: com.delphimon.workout-export \(ExportSchema.version)
         Workout: \(detail.summary.activityName) at \(ExportUtilities.date(detail.summary.startDate))
 

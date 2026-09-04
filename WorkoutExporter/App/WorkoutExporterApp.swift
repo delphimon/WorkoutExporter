@@ -23,7 +23,7 @@ private struct PrivacyProtectedRootView: View {
                 Color(.systemBackground)
                     .ignoresSafeArea()
                     .overlay {
-                        Label("Workout Exporter", systemImage: "lock.shield")
+                        Label("Activity Manager", systemImage: "lock.shield")
                             .font(.headline)
                     }
                     .opacity(scenePhase == .active ? 0 : 1)
