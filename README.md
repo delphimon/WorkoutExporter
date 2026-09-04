@@ -93,6 +93,9 @@ See [TESTING.md](TESTING.md) for real-device checks and simulator limitations.
 - `Features/`: authorization, list, detail, export, and settings UI
 - `Persistence/`: user settings, export history, cached-package references, and location tags
 - `WorkoutExporterTests/`: deterministic unit and integration coverage
+- `ActivityArchiveMac/`: separate sandboxed macOS app, Keychain-backed vault onboarding, and file import UI
+- `ActivityArchiveMacTests/`: Mac vault-access and import-state unit coverage
+- `ActivityArchiveMacUITests/`: Mac onboarding, recovery, and import-entry UI coverage
 - `Packages/ActivityArchiveCore/`: shared, platform-neutral `.activitypkg` models, identity, validation, secure ZIP reader/writer, and migration contract for iPhone and Mac targets
 
 Related documentation: [architecture](ARCHITECTURE.md), [export format](EXPORT_FORMAT.md), [testing](TESTING.md), [known limitations](KNOWN_LIMITATIONS.md).
