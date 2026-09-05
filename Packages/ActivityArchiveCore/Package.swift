@@ -12,13 +12,26 @@ let package = Package(
     .library(
       name: "ActivityArchiveCore",
       targets: ["ActivityArchiveCore"]
-    )
+    ),
+    .library(
+      name: "ActivityArchiveVault",
+      targets: ["ActivityArchiveVault"]
+    ),
   ],
   targets: [
     .target(name: "ActivityArchiveCore"),
+    .target(
+      name: "ActivityArchiveVault",
+      dependencies: ["ActivityArchiveCore"],
+      linkerSettings: [.linkedLibrary("sqlite3")]
+    ),
     .testTarget(
       name: "ActivityArchiveCoreTests",
       dependencies: ["ActivityArchiveCore"]
+    ),
+    .testTarget(
+      name: "ActivityArchiveVaultTests",
+      dependencies: ["ActivityArchiveCore", "ActivityArchiveVault"]
     ),
   ]
 )
