@@ -6,6 +6,11 @@ The unit target covers route distance and point series, invalid points, GPS jump
 
 The shared `ActivityArchiveCore` package separately tests round trips, stable content identity, streaming file payloads, schema rejection, tamper detection, file limits, traversal/absolute paths, Unicode and case-folding collisions, undeclared files, and source-versus-normalized value separation.
 
+The Activity Archive Mac scheme adds unit coverage for first-run state, valid and stale bookmarks,
+interrupted-import recovery, selection cancellation, security-scope release, mixed import outcomes,
+inaccessible files, and active cancellation. Its UI target covers local-only/FileVault/verified
+backup guidance, missing-bookmark recovery, and the ready-vault Open and drag/drop entry points.
+
 The UI target covers onboarding/privacy copy, synthetic-data entry, workout list/filter navigation, detail loading, export configuration, batch selection, exported-status filtering and clearing, cached-package sharing, and manual location tags without activity-type renaming.
 
 All 15 deterministic fixtures are generated in `SyntheticWorkoutFactory`:
@@ -36,7 +41,34 @@ Run:
   -parallel-testing-enabled NO
 ```
 
-Use the Xcode beta binary explicitly on macOS 27 beta systems. The checked toolchain is Xcode 27.0 beta build 27A5228h with the iOS 27.0 SDK. Disabling parallel testing avoids unnecessary cloned simulators and duplicate destination names.
+Use the Xcode beta binary explicitly on macOS 27 beta systems. The current checked toolchain is
+Xcode 27.0 beta build 27A5252f with the iOS/macOS 27.0 SDKs. Disabling parallel testing avoids
+unnecessary cloned simulators and duplicate destination names.
+
+Run the complete Mac unit and UI suite on the host Mac:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+  test -project WorkoutExporter.xcodeproj \
+  -scheme ActivityArchive \
+  -destination 'platform=macOS,arch=arm64' \
+  -parallel-testing-enabled NO
+```
+
+Verify the production configuration separately:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+  build -project WorkoutExporter.xcodeproj \
+  -scheme ActivityArchive \
+  -configuration Release \
+  -destination 'platform=macOS,arch=arm64'
+```
+
+For Release acceptance, verify the signature, hardened runtime, sandbox/bookmark entitlements,
+embedded privacy manifest, bundle identifier, and display name. UI automation on macOS can
+occasionally time out before reaching the app; rerun a focused test with fresh derived data and do
+not report that infrastructure error as an application assertion failure.
 
 ## Simulator
 

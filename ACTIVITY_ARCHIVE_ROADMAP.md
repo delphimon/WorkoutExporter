@@ -95,25 +95,66 @@ Pull-request handoff status:
 5. Pull request #47 is linked to #44 and contains the exact validation evidence.
 6. Remaining action: review GitHub checks and obtain explicit user approval before merging #47.
 
+### #45 Activity Archive Mac app and vault onboarding
+
+Working branch: `agent/activity-archive-mac-app` (stacked on pull request #47 until #44 merges)
+Pull request: [#48](https://github.com/delphimon/WorkoutExporter/pull/48)
+Implementation commit: `5912b46`
+
+Implemented in #48:
+
+- Separate `ActivityArchive` macOS app target with bundle identifier
+  `com.delphimon.ActivityArchive`, its own Info.plist, sandbox/bookmark entitlements, hardened
+  runtime, explicit Release module identity, and shared scheme.
+- First-run Create/Open setup with local-only, FileVault, and verified-backup guidance.
+- App-scoped security bookmark stored in Keychain with when-unlocked, this-device-only access;
+  source health and route data remains in the vault.
+- Startup bookmark restoration, stale/invalid bookmark recovery, interrupted-import recovery,
+  secure access lifetime management, and explicit Close/Open Another Vault controls.
+- Multi-file Open panel and drag/drop entry points for Activity Package, GPX, GeoJSON, and JSON,
+  with cancellable accessible progress, duplicate counts, and per-file errors.
+- UI-test launch scaffolding compiled only in Debug; the Release binary cannot activate it.
+- Privacy manifest with disk-space preflight reason `85F4.1` and explicit local-only privacy
+  documentation.
+
+Current automated evidence with Xcode 27 Beta on macOS 27:
+
+- Complete `ActivityArchive` scheme: 11/11 tests passed (8 unit, 3 UI).
+- Debug build and static analysis passed.
+- Signed arm64 Release build passed strict code-signature verification.
+- Release entitlements contain only app sandbox, app-scoped bookmarks, and user-selected
+  read/write access; `get-task-allow` is absent.
+- Release bundle identity, display name, embedded privacy manifest, and imported/exported file type
+  declarations were inspected.
+- Strict Swift formatting, plist validation, whitespace validation, and unsafe-force-operation scan
+  pass for the new Mac code.
+
+Pull-request handoff status:
+
+1. The final complete Mac scheme and hardened Release verification passed.
+2. The existing iPhone regression suite passed, proving the new targets do not regress Activity
+   Manager.
+3. Staged-diff review excluded the user-owned `WorkoutExporter.xcscheme` modification.
+4. The implementation and documentation were signed, committed, pushed, and opened as stacked pull
+   request #48 with exact validation evidence.
+5. Remaining action: after #47 merges, retarget #48 to `main`, verify its diff/status, and obtain
+   explicit user approval before merging it.
+
 ## Remaining P0 sequence
 
-1. [#45](https://github.com/delphimon/WorkoutExporter/issues/45): add the Activity Archive macOS
-   app target, create/open vault onboarding, security-scoped bookmark recovery, FileVault/backup
-   guidance, Open panel, drag/drop, accessible progress, and onboarding/recovery tests. Depends on
-   #44.
-2. [#46](https://github.com/delphimon/WorkoutExporter/issues/46): source activity and import-job
+1. [#46](https://github.com/delphimon/WorkoutExporter/issues/46): source activity and import-job
    catalog, search/filter, immutable route overlays, source statistics, warnings, rejected imports,
    integrity UI, accessibility, and large-library performance. Depends on #44 and #45.
-3. [#36](https://github.com/delphimon/WorkoutExporter/issues/36): duplicate candidates and
+2. [#36](https://github.com/delphimon/WorkoutExporter/issues/36): duplicate candidates and
    whole-source canonical selection. Preserve all observations; make source-reported,
    source-recalculated, and canonical layers explicit. Depends on the Mac catalog.
-4. [#38](https://github.com/delphimon/WorkoutExporter/issues/38): anchored incremental HealthKit
+3. [#38](https://github.com/delphimon/WorkoutExporter/issues/38): anchored incremental HealthKit
    collection, crash-safe outbound queue, provisional/final/tombstone revisions, retries, and
    diagnostics.
-5. [#35](https://github.com/delphimon/WorkoutExporter/issues/35): QR pairing, authenticated local
+4. [#35](https://github.com/delphimon/WorkoutExporter/issues/35): QR pairing, authenticated local
    transport, resumable at-least-once package delivery, acknowledgement after durable Mac receipt,
    and revocation.
-6. [#40](https://github.com/delphimon/WorkoutExporter/issues/40): real samples, performance,
+5. [#40](https://github.com/delphimon/WorkoutExporter/issues/40): real samples, performance,
    adversarial security, portable backup/restore, accessibility/localization, Xcode Beta, and
    physical-device release validation. This is the final P0 acceptance gate.
 

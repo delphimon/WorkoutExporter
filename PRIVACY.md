@@ -36,3 +36,20 @@ declares the `UserDefaults` required-reason API with reason `CA92.1`. This must
 be reviewed again whenever frameworks or storage behavior change.
 
 HealthKit read authorization is deliberately private. A successful authorization request does not prove that any read type was granted, and the app does not claim otherwise.
+
+Activity Archive on Mac is also local-first:
+
+- The vault must be placed on local storage; the setup UI explicitly excludes cloud-synced and
+  network locations.
+- Original imports, source values, routes, job history, and warnings remain inside the selected
+  vault. The app does not upload them.
+- Persistent access is represented only by an app-scoped security bookmark protected in Keychain
+  with when-unlocked, this-device-only accessibility. Health and route content is not copied into
+  preferences, Keychain, or Application Support.
+- The sandbox grants access only to user-selected read/write locations. The Release app uses the
+  hardened runtime and does not include the debug `get-task-allow` entitlement.
+- Setup recommends FileVault and a backup whose restoration has been tested. FileVault protects
+  the volume; the vault layer does not claim to provide its own encryption at rest.
+- The Mac privacy manifest declares no tracking or developer-collected data. It declares the disk
+  space required-reason API with reason `85F4.1`, used only to confirm sufficient capacity before
+  copying an import into immutable object storage.
