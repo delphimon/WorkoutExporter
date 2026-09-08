@@ -9,6 +9,22 @@ struct VaultWorkspaceView: View {
   @Bindable var onboarding: VaultOnboardingModel
   @Bindable var imports: VaultImportModel
   @State private var isDropTargeted = false
+  @State private var section = "Imports"
+  @State private var catalog: VaultCatalogModel
+
+  init(
+    vault: ActivityVault, vaultURL: URL, onboarding: VaultOnboardingModel, imports: VaultImportModel
+  ) {
+    self.vault = vault
+    self.vaultURL = vaultURL
+    self.onboarding = onboarding
+    self.imports = imports
+    _catalog = State(initialValue: VaultCatalogModel(vault: vault))
+  }
+
+  private var isBusy: Bool {
+    imports.isImporting || catalog.isChecking || catalog.isLoading || catalog.isLoadingRoute
+  }
 
   private var importTypes: [UTType] {
     [
@@ -21,30 +37,58 @@ struct VaultWorkspaceView: View {
 
   var body: some View {
     NavigationSplitView {
-      List {
-        Label("Activities", systemImage: "figure.hiking")
-        Label("Review", systemImage: "checklist")
-        Label("Trips", systemImage: "mountain.2")
-        Label("Map", systemImage: "map")
-        Label("Imports", systemImage: "tray.and.arrow.down")
-        Label("Analytics", systemImage: "chart.xyaxis.line")
-        Label("Settings", systemImage: "gearshape")
+      List(selection: $section) {
+        Label("Activities", systemImage: "figure.hiking").tag("Activities").accessibilityIdentifier(
+          "navigation-activities")
+        Label("Imports", systemImage: "tray.and.arrow.down").tag("Imports").accessibilityIdentifier(
+          "navigation-imports")
+        Label("Integrity", systemImage: "checkmark.shield").tag("Integrity")
+          .accessibilityIdentifier("navigation-integrity")
       }
       .navigationTitle("Activity Archive")
     } detail: {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 24) {
-          header
-          importZone
-          importProgress
-          failureList
-          securityReminder
+      Group {
+        switch section {
+        case "Activities": VaultCatalogView(model: catalog)
+        case "Integrity":
+          ScrollView {
+            VaultIntegrityView(model: catalog, isImporting: imports.isImporting)
+            securityReminder.padding(24)
+          }
+        default:
+          ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+              header
+              if catalog.blocksImport {
+                Label(
+                  "Imports paused. Check free space and vault integrity before continuing.",
+                  systemImage: "exclamationmark.triangle")
+              }
+              importZone
+              importProgress
+              failureList
+              VaultImportHistoryView(model: catalog)
+              securityReminder
+            }
+            .padding(32)
+            .frame(maxWidth: 900, alignment: .leading)
+          }
         }
-        .padding(32)
-        .frame(maxWidth: 820, alignment: .leading)
       }
-      .navigationTitle("Imports")
+      .navigationTitle(section)
     }
+    .task { await catalog.checkCapacity() }
+    .onChange(of: section) { _, _ in catalog.filter = ActivityCatalogFilter() }
+    .onChange(of: imports.isImporting) { _, importing in
+      if importing { catalog.importsStarted() }
+      if !importing {
+        Task {
+          await catalog.checkCapacity()
+          await catalog.refresh(imports: section == "Imports")
+        }
+      }
+    }
+    .onDisappear { catalog.cancelAll() }
   }
 
   private var header: some View {
@@ -71,7 +115,7 @@ struct VaultWorkspaceView: View {
         .foregroundStyle(.secondary)
       Button("Open Files…") { chooseFiles() }
         .buttonStyle(.borderedProminent)
-        .disabled(imports.isImporting)
+        .disabled(imports.isImporting || catalog.blocksImport)
         .accessibilityIdentifier("open-import-files-button")
     }
     .padding(36)
@@ -150,7 +194,7 @@ struct VaultWorkspaceView: View {
       HStack {
         Button("Open Another Vault…") { chooseExistingVault() }
         Button("Close Vault") { Task { await onboarding.closeVault() } }
-      }
+      }.disabled(isBusy)
     }
     .padding()
     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -180,6 +224,7 @@ struct VaultWorkspaceView: View {
   }
 
   private func startImport(_ urls: [URL]) {
+    guard !catalog.blocksImport else { return }
     let accepted = urls.filter { url in
       ["activitypkg", "gpx", "geojson", "json"].contains(url.pathExtension.lowercased())
     }

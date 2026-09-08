@@ -53,3 +53,17 @@ Activity Archive on Mac is also local-first:
 - The Mac privacy manifest declares no tracking or developer-collected data. It declares the disk
   space required-reason API with reason `85F4.1`, used only to confirm sufficient capacity before
   copying an import into immutable object storage.
+
+Mac source catalog and map display:
+
+- Catalog, import history, original filenames, source identities, warnings and error details are
+  visible only inside the selected vault workflow. They are not logged or transmitted to a developer.
+- Route previews are generated on explicit request and retained only in memory. Apple Maps may
+  request basemap content for the displayed region; the UI explains this before loading an overlay.
+  No source package, health statistics or biometric series is sent to a developer service.
+- Disk-space reason `85F4.1` covers the visible capacity display; `E174.1` covers checking sufficient
+  space before writing imported files. The earlier handoff described `85F4.1` alone as the preflight
+  reason; that description is corrected here. Both reasons are now in the embedded Mac manifest.
+  See [Apple's required-reason API documentation](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype).
+- Synthetic catalog launch fixtures remain inside `#if DEBUG`. Release has no synthetic-data launch
+  modes, new persistence outside the vault, analytics, network-client entitlement or health uploads.

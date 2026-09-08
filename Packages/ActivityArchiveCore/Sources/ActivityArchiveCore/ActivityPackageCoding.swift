@@ -276,6 +276,23 @@ public struct ActivityPackageReader: Sendable {
     )
   }
 
+  /// Validates the complete package before delivering bounded chunks. Consumers must discard
+  /// partial output on any error, including a file changed between validation and streaming.
+  public func streamPayload(
+    for path: String,
+    inPackageAt url: URL,
+    consume: (Data) throws -> Void
+  ) throws {
+    let manifest = try validatePackage(at: url)
+    let archive = try StoredZIPArchive(url: url, limits: limits)
+    let path = try ActivityPackagePath.validated(path)
+    guard let declared = manifest.files.first(where: { $0.path == path }),
+      let entry = archive.entry(named: path)
+    else { throw ActivityPackageError.missingFile(path) }
+    let digest = try archive.stream(entry: entry, consume: consume)
+    guard digest == declared.sha256 else { throw ActivityPackageError.checksumMismatch(path) }
+  }
+
   private func validate(
     manifest: ActivityPackageManifest,
     archive: StoredZIPArchive

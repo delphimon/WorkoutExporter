@@ -85,3 +85,42 @@ status and a manual location tag remain independent.
 ## macOS companion boundary
 
 The iPhone and planned Activity Archive Mac target live in this repository but have separate app targets, bundle identifiers, signing, and release lifecycles. `Packages/ActivityArchiveCore` is the shared boundary for package identity, schema, validation, safe ZIP I/O, provenance, and migrations; it contains no HealthKit or UI dependency. FIT support can be added behind `WorkoutExporting` after a maintained, correctly licensed implementation is identified and tested.
+
+## Mac source catalog and display derivatives
+
+`ActivityVaultDatabase` exposes separate `catalogPage` and `importPage` APIs. Both use stable
+keyset cursors (timestamp plus immutable row/job identity), bind literal search values, and cap
+pages at 200 rows (the Mac requests 100). Schema v2 adds expression/order and relationship indexes
+without replacing source rows, metadata, units or object bytes. Search/date/filter changes reset
+paging. The Mac retains one activity page and one import page, with independently cancellable
+selection/route work. SQLite checks task cancellation during statement execution, bounds individual
+values at 16 MB and materialized query output at 32 MB. Detail reads cap statistics/routes/warnings
+at 1,000 entries and report overflow instead of silently treating partial evidence as complete.
+
+`ActivityVault.routeDisplay` validates the immutable object hash, then decodes off the main actor.
+GPX and package JSONL are streamed; standalone GeoJSON previews are capped at 16 MB. Previews cap
+routes at 10 million input points, 512 segments, and approximately 12,512 retained display points;
+package previews cap distinct payloads at 64 and JSONL records at 256 KB. Unsupported authoritative
+formats produce an actionable error rather than falling back to a supplemental route. XML external
+entity resolution is disabled. Invalid coordinates fail the preview instead of joining surrounding
+points. Package payload chunks are checksum-validated; failed/cancelled results are discarded.
+
+Every preview carries source object SHA-256, `source-stride-preview/1`, original point count,
+segment references and original point ordinals. Sampling preserves source order and segment
+endpoints; it is explicitly a **display derivative**, held only in memory, never stored as original
+or canonical geometry. The map compares at most two observations, using solid/dashed lines as well
+as color. The current decoder emits its final bounded preview; progressive partial-map updates
+remain a possible optimization, not an integrity guarantee. Source files are never rewritten.
+
+Integrity scans read 200 object records at a time, keep full failure counts but only the first 100
+hashes per category, and propagate cancellation instead of counting it as corruption. The UI blocks
+imports during a scan or after an unhealthy/failed scan. Recovery guidance uses a separately restored
+verified backup; no destructive repair is implemented. Capacity checks reuse the existing vault
+reserve and distinguish unknown capacity. This is a session-level operational guard, not a promise
+that unrelated processes cannot modify the selected volume.
+
+Import jobs link explicitly to their retained observation in schema v2, including duplicate
+logical revisions whose container hash differs only because generation metadata changed. The
+migration backfills links where the old raw object hash establishes the relationship. Legacy v1
+duplicate jobs with different container hashes remain unlinked rather than inventing provenance;
+their job history and raw artifacts are still visible in Imports. New deliveries have complete links.

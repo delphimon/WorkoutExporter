@@ -45,3 +45,54 @@ final class ActivityArchiveMacUITests: XCTestCase {
     )
   }
 }
+
+extension ActivityArchiveMacUITests {
+  @MainActor
+  func testCatalogSearchSelectionAndRouteAccessibility() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--ui-testing-catalog"]
+    app.launch()
+    let activities = app.descendants(matching: .any)["navigation-activities"].firstMatch
+    XCTAssertTrue(activities.waitForExistence(timeout: 10))
+    activities.click()
+    XCTAssertTrue(app.staticTexts["source-observation-notice"].waitForExistence(timeout: 5))
+    let row = app.descendants(matching: .any)["source-row-1"].firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    row.click()
+    XCTAssertTrue(app.buttons["load-source-overlay"].waitForExistence(timeout: 5))
+    app.buttons["load-source-overlay"].click()
+    XCTAssertTrue(app.staticTexts["route-derivative-notice"].waitForExistence(timeout: 10))
+    let attachment = XCTAttachment(screenshot: app.screenshot())
+    attachment.name = "Source route display derivative"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    let search = app.textFields["catalog-search"]
+    search.click()
+    search.typeText("does not match")
+    XCTAssertTrue(app.staticTexts["catalog-page-status"].waitForExistence(timeout: 5))
+    let predicate = NSPredicate(
+      format: "value CONTAINS %@ OR label CONTAINS %@", "0 on this page", "0 on this page")
+    expectation(for: predicate, evaluatedWith: app.staticTexts["catalog-page-status"])
+    waitForExpectations(timeout: 5)
+  }
+
+  @MainActor
+  func testImportHistoryAndIntegrityRecoveryControls() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--ui-testing-catalog"]
+    app.launch()
+    XCTAssertTrue(app.staticTexts["Import Activities"].waitForExistence(timeout: 10))
+    app.descendants(matching: .any)["navigation-integrity"].firstMatch.click()
+    let check = app.buttons["check-integrity-button"]
+    XCTAssertTrue(check.waitForExistence(timeout: 5))
+    check.click()
+    let status = app.staticTexts["vault-integrity-status"]
+    expectation(
+      for: NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "Healthy:", "Healthy:"),
+      evaluatedWith: status)
+    waitForExpectations(timeout: 10)
+    XCTAssertTrue(app.buttons["Close Vault"].exists)
+    app.buttons["Close Vault"].click()
+    XCTAssertTrue(app.buttons["open-vault-button"].waitForExistence(timeout: 5))
+  }
+}

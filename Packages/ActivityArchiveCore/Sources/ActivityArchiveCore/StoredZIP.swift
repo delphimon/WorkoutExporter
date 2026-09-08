@@ -233,6 +233,10 @@ struct StoredZIPArchive {
   }
 
   func sha256(for entry: StoredZIPEntry) throws -> String {
+    try stream(entry: entry) { _ in }
+  }
+
+  func stream(entry: StoredZIPEntry, consume: (Data) throws -> Void) throws -> String {
     let handle = try FileHandle(forReadingFrom: url)
     defer { try? handle.close() }
     let dataOffset = try payloadOffset(for: entry, using: handle)
@@ -249,6 +253,7 @@ struct StoredZIPArchive {
       remaining -= UInt64(chunk.count)
       hasher.update(data: chunk)
       crc.update(chunk)
+      try consume(chunk)
     }
     guard crc.finalized == entry.crc32 else {
       throw ActivityPackageError.checksumMismatch(entry.path)

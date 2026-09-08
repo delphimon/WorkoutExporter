@@ -90,14 +90,26 @@ public actor ActivityObjectStore {
   }
 
   public func verify(hash: String) throws -> Bool {
-    let url = try layout.objectURL(forSHA256: hash)
+    let url = try objectURL(for: hash)
     guard FileManager.default.fileExists(atPath: url.path) else { return false }
     try rejectSymbolicLink(url)
     return try hashFile(url).hash == hash
   }
 
   public func objectURL(for hash: String) throws -> URL {
-    try layout.objectURL(forSHA256: hash)
+    try layout.validate()
+    let url = try layout.objectURL(forSHA256: hash)
+    var current = layout.objects
+    for component in url.pathComponents.dropFirst(layout.objects.pathComponents.count) {
+      current.append(path: component)
+      // lstat also finds dangling symlinks, unlike fileExists.
+      if let attributes = try? FileManager.default.attributesOfItem(atPath: current.path),
+        attributes[.type] as? FileAttributeType == .typeSymbolicLink
+      {
+        throw ActivityVaultError.unexpectedSymbolicLink("Immutable object path")
+      }
+    }
+    return url
   }
 
   private func publish(data: Data, hash: String) throws -> ActivityStoredObject {

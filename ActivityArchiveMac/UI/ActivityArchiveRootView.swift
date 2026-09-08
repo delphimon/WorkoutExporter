@@ -20,7 +20,7 @@ struct ActivityArchiveRootView: View {
             vaultURL: url,
             onboarding: model.onboarding,
             imports: model.imports
-          )
+          ).id(url)
         }
       }
     }

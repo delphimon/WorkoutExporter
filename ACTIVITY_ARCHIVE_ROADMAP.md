@@ -207,3 +207,35 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild test -q
 
 The exact simulator runtime can change with Xcode Beta. If the named destination is unavailable,
 list installed destinations and select an installed iPhone runtime; document the substitution.
+Issue #46 implementation checklist, verified 2026-09-04 (local date).
+
+Active branch: `codex/activity-archive-catalog`, based on `agent/activity-archive-mac-app` at `89c238f4f14fc2d7bc1c6d8bb06522fbef95c0e2`. This is one direct dependent branch on #48; #48 depends on #47. Neither prerequisite is authorized for merge yet. Both PRs are OPEN, MERGEABLE/CLEAN, with no checks, conversation comments, inline comments, or reviews; commits/bases match the handoff. Origin fetch confirms 0 ahead/0 behind. Xcode Beta is 27.0 build 27A5252f.
+
+- [x] Read full handoff/spec and issues #34/#41/#44/#45/#46 including comments; review PR #47/#48 commits/deltas/status and relevant architecture/privacy/testing/export documentation.
+- [x] Preserve both pre-existing unstaged schemes: `WorkoutExporter.xcscheme` (explicitly user-owned) and `ActivityArchive.xcscheme` (additional local drift, ownership unknown; treated as user-owned). Neither may enter this milestone's commits.
+- [ ] Extend vault API with indexed bounded keyset pagination, deterministic ordering, cancellable queries, literal parameterized search, date/source/type/route/metric/completeness/import-status/warning filters; migration preserves existing evidence.
+- [ ] Separate Activities and Imports navigation; bounded pages, loading/empty/error/retry states, keyboard navigation and stable accessibility identifiers.
+- [ ] Read-only observation details: stable identity/revision/hash, timestamps/time-zone context, activity type separate from title, source app/device, exact source-reported statistics/units/provenance, route/metric availability, import/warning state. No implied canonical selection or totals.
+- [ ] On-demand bounded route overlay API and MapKit presentation for Activity Package, GPX and GeoJSON, preserving segment boundaries and source order. Any sampled representation must say display derivative, carry algorithm version and source hash/point provenance, and never replace original geometry.
+- [ ] Searchable paginated import history with duplicate/rejected/cancelled state, warnings, retained artifact identity, safe actionable recovery through explicit file reselection.
+- [ ] Cancellable integrity UI with checked/healthy/missing/corrupt states and retry/recovery guidance; bounded scan/query/report memory and no destructive repair.
+- [ ] Capacity UI reuses existing reserve/preflight semantics; unknown capacity remains unknown; actionable low-disk warning.
+- [ ] Security/adversarial coverage for query bounds/cancellation, hostile search, unsafe object reads, route parser limits, malformed payloads, integrity/cancellation/recovery, and exact evidence preservation.
+- [ ] Large-library and large-route performance evidence; Mac model/UI accessibility and recovery tests.
+- [ ] Required final validation: full Core/Vault packages, full Mac unit/UI scheme, iPhone regression after package changes, static analysis, signed Release strict signature/entitlements (no get-task-allow), embedded Info.plist/privacy inspection, strict Swift format, whitespace and staged-file review.
+- [ ] Signed commits via configured 1Password SSH signer, push, linked PR with evidence, current handoff and issue status. Do not close #46 or merge without completion/approval.
+
+Data decisions: prompt/issues override draft specification's SI-storage wording. Source values and units stay exact. Original route bytes remain immutable. No FIT/TCX, segment reconstruction, browser acquisition, or trip editing in this slice. Real samples, live HealthKit, physical devices and manual VoiceOver acceptance are not yet verified.
+
+Next action: implement the paginated vault catalog API and migration with focused tests before connecting the Mac UI.
+Approved merges completed after explicit user approval in the active engineering task.
+
+- [x] #44 / PR #47 squash merged into main: `4851ccabd014ec2bffc1b337f8bb051789ce3206`, 2026-09-05 01:15:30 UTC.
+- [x] #45 / PR #48 retargeted to main. Signed base integration `06bad4303dadecaa7bb9c2d46bc2175bcf14d1dc` retains the exact original `89c238f` tree; the handoff add/add conflict was resolved by retaining the complete Mac handoff. Reviewed staging contained no source changes and neither user scheme.
+- [x] Verified PR #48 contains only the original Mac delta: 20 files, +1809/-10, no vault implementation files.
+- [x] Re-ran full ActivityArchive scheme in isolated checkout: 11 passed, 0 failed, 0 skipped on arm64 MacBook Pro, macOS 27.0 build 26A5425a, Xcode Beta 27.0 build 27A5252f. Result: `/private/tmp/ActivityArchiveMergeValidation/Logs/Test/Test-ActivityArchive-2026.09.04_18-18-18--0700.xcresult`. Initial restricted-sandbox attempts failed to access Xcode caches/services; the authorized retry passed.
+- [x] PR #48 was MERGEABLE/CLEAN with no automated GitHub checks immediately before approved squash merge: `d61721444862ea18075ed20cfd05f408febfb9cf`, 2026-09-05 01:22:56 UTC.
+- [x] Local main synchronized. The #46 branch now starts at merged main, with its uncommitted work preserved; it no longer needs a PR stack.
+- [ ] #46 source catalog/overlays/integrity UI is in progress. #41 and #34 remain open.
+
+#44 and #45 requirement checklists were reviewed against their implementation and prior evidence before merging; their linked closing references closed the fulfilled child issues. Physical-device/live-HealthKit acceptance remains #40; this Mac run does not establish it. Both original local scheme SHA-256 hashes remain unchanged. An additional project.pbxproj ordering-only local edit appeared during work; ownership is unknown and it is being preserved/excluded as unrelated.
