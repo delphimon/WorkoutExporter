@@ -137,6 +137,8 @@ public actor ActivityVaultDatabase {
             revision: draft.packageRevision
           )
         }
+        try execute("UPDATE import_jobs SET observation_id = ? WHERE id = ?",
+          bindings: [.int64(existing.id), .text(jobID.uuidString.lowercased())])
         try finishJob(
           id: jobID,
           status: .duplicate,
@@ -239,6 +241,8 @@ public actor ActivityVaultDatabase {
           ]
         )
       }
+      try execute("UPDATE import_jobs SET observation_id = ? WHERE id = ?",
+        bindings: [.int64(observationID), .text(jobID.uuidString.lowercased())])
       try finishJob(
         id: jobID,
         status: .imported,
@@ -293,25 +297,27 @@ public actor ActivityVaultDatabase {
       """,
       bindings: [.int64(Int64(max(1, min(limit, 10_000))))]
     )
-    return try rows.map { row in
-      guard let id = UUID(uuidString: try row.text(0)),
-        let kind = ActivityImportKind(rawValue: try row.text(3)),
-        let status = ActivityImportStatus(rawValue: try row.text(5))
-      else {
-        throw ActivityVaultError.database("An import job contains invalid identifiers")
-      }
-      return ActivityImportJob(
-        id: id,
-        sourceFilename: try row.text(1),
-        sourcePath: row.optionalText(2),
-        kind: kind,
-        contentHash: row.optionalText(4),
-        status: status,
-        startedAt: Date(timeIntervalSince1970: try row.double(6)),
-        completedAt: row.optionalDouble(7).map(Date.init(timeIntervalSince1970:)),
-        errorMessage: row.optionalText(8)
-      )
+    return try rows.map(decodeJob)
+  }
+
+  private func decodeJob(_ row: SQLiteRow) throws -> ActivityImportJob {
+    guard let id = UUID(uuidString: try row.text(0)),
+      let kind = ActivityImportKind(rawValue: try row.text(3)),
+      let status = ActivityImportStatus(rawValue: try row.text(5))
+    else {
+      throw ActivityVaultError.database("An import job contains invalid identifiers")
     }
+    return ActivityImportJob(
+      id: id,
+      sourceFilename: try row.text(1),
+      sourcePath: row.optionalText(2),
+      kind: kind,
+      contentHash: row.optionalText(4),
+      status: status,
+      startedAt: Date(timeIntervalSince1970: try row.double(6)),
+      completedAt: row.optionalDouble(7).map(Date.init(timeIntervalSince1970:)),
+      errorMessage: row.optionalText(8)
+    )
   }
 
   public func observations(limit: Int = 1_000) throws -> [ActivitySourceObservation] {
@@ -327,45 +333,264 @@ public actor ActivityVaultDatabase {
       """,
       bindings: [.int64(Int64(max(1, min(limit, 100_000))))]
     )
-    return try rows.map { row in
-      guard let packageID = UUID(uuidString: try row.text(1)),
-        let kind = ActivityImportKind(rawValue: try row.text(6))
-      else {
-        throw ActivityVaultError.database("A source observation contains invalid identifiers")
-      }
-      return ActivitySourceObservation(
-        id: try row.int64(0),
-        packageID: packageID,
-        packageRevision: try unsigned64(try row.int64(2), field: "package revision"),
-        sourceActivityID: try row.text(3),
-        contentHash: try row.text(4),
-        objectHash: try row.text(5),
-        kind: kind,
-        workoutTypeIdentifier: try optionalUInt(
-          row.optionalInt64(7),
-          field: "workout type identifier"
-        ),
-        workoutTypeName: try row.text(8),
-        title: row.optionalText(9),
-        startDate: row.optionalDouble(10).map(Date.init(timeIntervalSince1970:)),
-        endDate: row.optionalDouble(11).map(Date.init(timeIntervalSince1970:)),
-        timeZoneIdentifier: row.optionalText(12),
-        durationSeconds: row.optionalDouble(13),
-        sourceName: try row.text(14),
-        sourceBundleIdentifier: row.optionalText(15),
-        completeness: try row.text(16),
-        routeState: try row.text(17),
-        metricsState: try row.text(18),
-        importedAt: Date(timeIntervalSince1970: try row.double(19))
+    return try rows.map(decodeObservation)
+  }
+
+  private func decodeObservation(_ row: SQLiteRow) throws -> ActivitySourceObservation {
+    guard let packageID = UUID(uuidString: try row.text(1)),
+      let kind = ActivityImportKind(rawValue: try row.text(6))
+    else {
+      throw ActivityVaultError.database("A source observation contains invalid identifiers")
+    }
+    return ActivitySourceObservation(
+      id: try row.int64(0),
+      packageID: packageID,
+      packageRevision: try unsigned64(try row.int64(2), field: "package revision"),
+      sourceActivityID: try row.text(3),
+      contentHash: try row.text(4),
+      objectHash: try row.text(5),
+      kind: kind,
+      workoutTypeIdentifier: try optionalUInt(
+        row.optionalInt64(7),
+        field: "workout type identifier"
+      ),
+      workoutTypeName: try row.text(8),
+      title: row.optionalText(9),
+      startDate: row.optionalDouble(10).map(Date.init(timeIntervalSince1970:)),
+      endDate: row.optionalDouble(11).map(Date.init(timeIntervalSince1970:)),
+      timeZoneIdentifier: row.optionalText(12),
+      durationSeconds: row.optionalDouble(13),
+      sourceName: try row.text(14),
+      sourceBundleIdentifier: row.optionalText(15),
+      completeness: try row.text(16),
+      routeState: try row.text(17),
+      metricsState: try row.text(18),
+      importedAt: Date(timeIntervalSince1970: try row.double(19))
+    )
+  }
+
+  /// Keyset paging keeps list memory independent of archive size. Reset cursors when filters change.
+  public func catalogPage(
+    filter: ActivityCatalogFilter = ActivityCatalogFilter(),
+    after: ActivityCatalogCursor? = nil,
+    limit: Int = 100
+  ) throws -> ActivityCatalogPage {
+    try validateFilter(filter)
+    let count = max(1, min(limit, 200))
+    var clauses = ["1 = 1"]
+    var bindings: [SQLiteValue] = []
+    if !filter.search.isEmpty {
+      clauses.append(
+        "(title LIKE ? ESCAPE '\\' OR source_activity_id LIKE ? ESCAPE '\\' OR source_name LIKE ? ESCAPE '\\' OR workout_type_name LIKE ? ESCAPE '\\')"
       )
+      bindings += Array(repeating: .text(literalSearch(filter.search)), count: 4)
+    }
+    for (column, value) in [
+      ("source_name", filter.source.isEmpty ? nil : filter.source),
+      ("workout_type_name", filter.activityType.isEmpty ? nil : filter.activityType),
+      ("route_state", filter.routeState), ("metrics_state", filter.metricsState),
+      ("completeness", filter.completeness),
+    ] {
+      if let value {
+        clauses.append("\(column) = ?")
+        bindings.append(.text(value))
+      }
+    }
+    if let date = filter.from {
+      clauses.append("start_date >= ?")
+      bindings.append(.double(date.timeIntervalSince1970))
+    }
+    if let date = filter.through {
+      clauses.append("start_date <= ?")
+      bindings.append(.double(date.timeIntervalSince1970))
+    }
+    if let status = filter.importStatus {
+      clauses.append(
+        "EXISTS (SELECT 1 FROM import_jobs j WHERE j.observation_id = o.id AND j.status = ?)"
+      )
+      bindings.append(.text(status.rawValue))
+    }
+    if let warnings = filter.hasWarnings {
+      clauses.append(
+        "\(warnings ? "" : "NOT ")EXISTS (SELECT 1 FROM import_jobs j JOIN import_warnings w ON w.job_id = j.id WHERE j.observation_id = o.id)"
+      )
+    }
+    if let after {
+      guard after.timestamp.isFinite, after.id > 0 else {
+        throw ActivityVaultError.invalidArtifact("Invalid catalog cursor")
+      }
+      clauses.append("(COALESCE(start_date, imported_at), o.id) < (?, ?)")
+      bindings += [.double(after.timestamp), .int64(after.id)]
+    }
+    bindings.append(.int64(Int64(count + 1)))
+    let observations = try query(
+      """
+      SELECT o.id, package_id, package_revision, source_activity_id, content_hash,
+        object_hash, kind, workout_type_identifier, workout_type_name,
+        title, start_date, end_date, time_zone_identifier, duration_seconds,
+        source_name, source_bundle_identifier, completeness, route_state, metrics_state, imported_at
+      FROM source_observations o WHERE \(clauses.joined(separator: " AND "))
+      ORDER BY COALESCE(start_date, imported_at) DESC, o.id DESC LIMIT ?
+      """, bindings: bindings
+    ).map(decodeObservation)
+    let page = Array(observations.prefix(count))
+    let next =
+      observations.count > count
+      ? page.last.map {
+        ActivityCatalogCursor(
+          timestamp: ($0.startDate ?? $0.importedAt).timeIntervalSince1970, id: $0.id)
+      } : nil
+    return ActivityCatalogPage(observations: page, next: next)
+  }
+
+  public func importPage(
+    filter: ActivityCatalogFilter = ActivityCatalogFilter(),
+    after: ActivityImportCursor? = nil,
+    limit: Int = 100
+  ) throws -> ActivityImportPage {
+    try validateFilter(filter)
+    let count = max(1, min(limit, 200))
+    var clauses = ["1 = 1"]
+    var bindings: [SQLiteValue] = []
+    if !filter.search.isEmpty {
+      clauses.append(
+        "(source_filename LIKE ? ESCAPE '\\' OR error_message LIKE ? ESCAPE '\\' OR content_hash LIKE ? ESCAPE '\\')"
+      )
+      bindings += Array(repeating: .text(literalSearch(filter.search)), count: 3)
+    }
+    if let status = filter.importStatus {
+      clauses.append("status = ?")
+      bindings.append(.text(status.rawValue))
+    }
+    if let from = filter.from {
+      clauses.append("started_at >= ?")
+      bindings.append(.double(from.timeIntervalSince1970))
+    }
+    if let through = filter.through {
+      clauses.append("started_at <= ?")
+      bindings.append(.double(through.timeIntervalSince1970))
+    }
+    if let warnings = filter.hasWarnings {
+      clauses.append(
+        "\(warnings ? "" : "NOT ")EXISTS (SELECT 1 FROM import_warnings w WHERE w.job_id = j.id)")
+    }
+    if let after {
+      guard after.timestamp.isFinite else {
+        throw ActivityVaultError.invalidArtifact("Invalid import cursor")
+      }
+      clauses.append("(started_at, id) < (?, ?)")
+      bindings += [.double(after.timestamp), .text(after.id.uuidString.lowercased())]
+    }
+    bindings.append(.int64(Int64(count + 1)))
+    let jobs = try query(
+      """
+      SELECT id, source_filename, source_path, kind, content_hash, status, started_at, completed_at, error_message
+      FROM import_jobs j WHERE \(clauses.joined(separator: " AND "))
+      ORDER BY started_at DESC, id DESC LIMIT ?
+      """, bindings: bindings
+    ).map(decodeJob)
+    let page = Array(jobs.prefix(count))
+    let next =
+      jobs.count > count
+      ? page.last.map {
+        ActivityImportCursor(timestamp: $0.startedAt.timeIntervalSince1970, id: $0.id)
+      } : nil
+    return ActivityImportPage(jobs: page, next: next)
+  }
+
+  public func observationDetail(id: Int64) throws -> ActivityObservationDetail {
+    let rows = try query(
+      """
+      SELECT id, package_id, package_revision, source_activity_id, content_hash,
+        object_hash, kind, workout_type_identifier, workout_type_name,
+        title, start_date, end_date, time_zone_identifier, duration_seconds,
+        source_name, source_bundle_identifier, completeness, route_state, metrics_state, imported_at
+      FROM source_observations WHERE id = ?
+      """, bindings: [.int64(id)])
+    guard let row = rows.first else {
+      throw ActivityVaultError.database("Observation no longer available")
+    }
+    let observation = try decodeObservation(row)
+    let statistics = try sourceStatistics(observationID: id)
+    let routes = try routeSummaries(observationID: id)
+    let warnings = try query(
+      """
+      SELECT w.id, w.job_id, w.code, w.message FROM import_warnings w
+      JOIN import_jobs j ON j.id = w.job_id WHERE j.observation_id = ? ORDER BY w.id LIMIT 1001
+      """, bindings: [.int64(observation.id)]
+    ).map { row in
+      guard let jobID = UUID(uuidString: try row.text(1)) else {
+        throw ActivityVaultError.database("Invalid warning job identity")
+      }
+      return ActivityImportWarning(
+        id: try row.int64(0), jobID: jobID, code: try row.text(2), message: try row.text(3))
+    }
+    guard statistics.count <= 1000, routes.count <= 1000, warnings.count <= 1000 else {
+      throw ActivityVaultError.invalidArtifact(
+        "This observation exceeds the 1,000-item detail display limit. Original evidence remains retained."
+      )
+    }
+    var source: ActivitySourceIdentity?
+    if observation.kind == .activityPackage {
+      let metadata = try query(
+        "SELECT CASE WHEN length(metadata_json) <= 16777216 THEN metadata_json ELSE NULL END FROM source_observations WHERE id = ?",
+        bindings: [.int64(id)])
+      guard let data = metadata.first?.optionalBlob(0) else {
+        throw ActivityVaultError.invalidArtifact("Indexed manifest exceeds the 16 MB detail limit")
+      }
+      let decoder = JSONDecoder()
+      decoder.dateDecodingStrategy = .iso8601
+      source = try decoder.decode(ActivityPackageManifest.self, from: data).source
+    }
+    return ActivityObservationDetail(
+      observation: observation, statistics: statistics, routes: routes,
+      deviceName: source?.deviceName, deviceModel: source?.deviceModel,
+      originalIdentifier: source?.originalIdentifier, warnings: warnings)
+  }
+
+  func objectRecordPage(after hash: String?, limit: Int = 200) throws -> [(
+    hash: String, byteLength: UInt64
+  )] {
+    try query(
+      "SELECT hash, byte_length FROM objects WHERE hash > ? ORDER BY hash LIMIT ?",
+      bindings: [.text(hash ?? ""), .int64(Int64(max(1, min(limit, 200))))]
+    ).map {
+      (try $0.text(0), try unsigned64(try $0.int64(1), field: "object length"))
+    }
+  }
+
+  private func literalSearch(_ value: String) -> String {
+    "%"
+      + value.replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "%", with: "\\%")
+      .replacingOccurrences(of: "_", with: "\\_") + "%"
+  }
+
+  private func validateFilter(_ filter: ActivityCatalogFilter) throws {
+    for value in [
+      filter.search, filter.source, filter.activityType, filter.routeState ?? "",
+      filter.metricsState ?? "", filter.completeness ?? "",
+    ] {
+      guard value.utf8.count <= 512, !value.contains("\0") else {
+        throw ActivityVaultError.invalidArtifact(
+          "Search and filter text must be at most 512 bytes and contain no null characters")
+      }
+    }
+    for date in [filter.from, filter.through].compactMap({ $0 }) {
+      guard date.timeIntervalSince1970.isFinite else {
+        throw ActivityVaultError.invalidArtifact("Invalid date filter")
+      }
+    }
+    if let from = filter.from, let through = filter.through, from > through {
+      throw ActivityVaultError.invalidArtifact("The start date must precede the end date")
     }
   }
 
   public func sourceStatistics(observationID: Int64) throws -> [ActivityPackageStatistic] {
-    try query(
+    let values = try query(
       """
       SELECT identifier, aggregation, value, unit, provenance
-      FROM source_statistics WHERE observation_id = ? ORDER BY id
+      FROM source_statistics WHERE observation_id = ? ORDER BY id LIMIT 1001
       """,
       bindings: [.int64(observationID)]
     ).map { row in
@@ -377,14 +602,19 @@ public actor ActivityVaultDatabase {
         provenance: try row.text(4)
       )
     }
+    guard values.count <= 1000 else {
+      throw ActivityVaultError.database(
+        "Detail exceeds the 1,000-item display limit. Original evidence remains retained.")
+    }
+    return values
   }
 
   public func routeSummaries(observationID: Int64) throws -> [ActivitySourceRouteSummary] {
-    try query(
+    let values = try query(
       """
       SELECT id, observation_id, track_id, point_count, minimum_latitude,
              maximum_latitude, minimum_longitude, maximum_longitude, has_timestamps
-      FROM source_routes WHERE observation_id = ? ORDER BY id
+      FROM source_routes WHERE observation_id = ? ORDER BY id LIMIT 1001
       """,
       bindings: [.int64(observationID)]
     ).map { row in
@@ -400,11 +630,16 @@ public actor ActivityVaultDatabase {
         hasTimestamps: try row.int64(8) == 1
       )
     }
+    guard values.count <= 1000 else {
+      throw ActivityVaultError.database(
+        "Detail exceeds the 1,000-item display limit. Original evidence remains retained.")
+    }
+    return values
   }
 
   public func warnings(jobID: UUID) throws -> [ActivityImportWarning] {
-    try query(
-      "SELECT id, code, message FROM import_warnings WHERE job_id = ? ORDER BY id",
+    let values = try query(
+      "SELECT id, code, message FROM import_warnings WHERE job_id = ? ORDER BY id LIMIT 1001",
       bindings: [.text(jobID.uuidString.lowercased())]
     ).map { row in
       ActivityImportWarning(
@@ -414,6 +649,11 @@ public actor ActivityVaultDatabase {
         message: try row.text(2)
       )
     }
+    guard values.count <= 1000 else {
+      throw ActivityVaultError.database(
+        "Detail exceeds the 1,000-item display limit. Original evidence remains retained.")
+    }
+    return values
   }
 
   public func objectHashes() throws -> [String] {
@@ -500,6 +740,7 @@ public actor ActivityVaultDatabase {
     guard sqlite3_busy_timeout(database, 5_000) == SQLITE_OK else {
       throw ActivityVaultError.database("Could not configure the SQLite busy timeout")
     }
+    sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 16 * 1024 * 1024)
     try execute(database, sql: "PRAGMA foreign_keys = ON")
     try execute(database, sql: "PRAGMA journal_mode = WAL")
     try execute(database, sql: "PRAGMA synchronous = FULL")
@@ -514,7 +755,10 @@ public actor ActivityVaultDatabase {
         "Catalog schema \(version) is newer than supported schema \(ActivityVaultSchema.currentVersion)"
       )
     }
-    guard version < 1 else { return }
+    if version >= 1 {
+      try migrateCatalogQueries(database, version: version)
+      return
+    }
     try execute(database, sql: "BEGIN IMMEDIATE")
     do {
       try execute(
@@ -607,6 +851,35 @@ public actor ActivityVaultDatabase {
       try? execute(database, sql: "ROLLBACK")
       throw error
     }
+    try migrateCatalogQueries(database, version: 1)
+  }
+
+  private static func migrateCatalogQueries(_ database: OpaquePointer, version: Int) throws {
+    guard version < 2 else { return }
+    try execute(database, sql: "BEGIN IMMEDIATE")
+    do {
+      try execute(
+        database,
+        sql: """
+          ALTER TABLE import_jobs ADD COLUMN observation_id INTEGER REFERENCES source_observations(id);
+          CREATE INDEX observations_object ON source_observations(object_hash);
+          UPDATE import_jobs SET observation_id = (SELECT id FROM source_observations o WHERE o.object_hash = import_jobs.content_hash LIMIT 1);
+          CREATE INDEX jobs_observation_status ON import_jobs(observation_id, status);
+          CREATE INDEX observations_catalog_order ON source_observations(COALESCE(start_date, imported_at) DESC, id DESC);
+          CREATE INDEX observations_source_order ON source_observations(source_name, COALESCE(start_date, imported_at) DESC, id DESC);
+          CREATE INDEX observations_type_order ON source_observations(workout_type_name, COALESCE(start_date, imported_at) DESC, id DESC);
+          CREATE INDEX jobs_catalog_order ON import_jobs(started_at DESC, id DESC);
+          CREATE INDEX jobs_object_status ON import_jobs(content_hash, status);
+          CREATE INDEX warnings_job ON import_warnings(job_id, id);
+          CREATE INDEX statistics_observation ON source_statistics(observation_id, id);
+          CREATE INDEX routes_observation ON source_routes(observation_id, id);
+          PRAGMA user_version = 2;
+          """)
+      try execute(database, sql: "COMMIT")
+    } catch {
+      try? execute(database, sql: "ROLLBACK")
+      throw error
+    }
   }
 
   private static func secureDatabaseFiles(layout: ActivityVaultLayout) throws {
@@ -655,14 +928,28 @@ public actor ActivityVaultDatabase {
   }
 
   private func query(_ sql: String, bindings: [SQLiteValue] = []) throws -> [SQLiteRow] {
+    try Task.checkCancellation()
     let statement = try prepare(sql, bindings: bindings)
-    defer { sqlite3_finalize(statement) }
+    sqlite3_progress_handler(connection.pointer, 1000, { _ in Task.isCancelled ? 1 : 0 }, nil)
+    defer {
+      sqlite3_progress_handler(connection.pointer, 0, nil, nil)
+      sqlite3_finalize(statement)
+    }
     var rows: [SQLiteRow] = []
+    var remainingBytes = 32 * 1024 * 1024
     while true {
       let result = sqlite3_step(statement)
+      try Task.checkCancellation()
       if result == SQLITE_DONE { return rows }
       guard result == SQLITE_ROW else {
         throw ActivityVaultError.database(String(cString: sqlite3_errmsg(connection.pointer)))
+      }
+      for column in 0..<sqlite3_column_count(statement) {
+        let size = Int(sqlite3_column_bytes(statement, column))
+        guard size <= remainingBytes else {
+          throw ActivityVaultError.database("Query results exceed the 32 MB display read limit")
+        }
+        remainingBytes -= size
       }
       rows.append(SQLiteRow(statement: statement))
     }
@@ -726,7 +1013,7 @@ private enum SQLiteValue {
     case .double(let value):
       result = sqlite3_bind_double(statement, index, value)
     case .text(let value):
-      result = sqlite3_bind_text(statement, index, value, -1, sqliteTransient)
+      result = sqlite3_bind_text(statement, index, value, Int32(value.utf8.count), sqliteTransient)
     case .blob(let data):
       result = data.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, index, bytes.baseAddress, Int32(data.count), sqliteTransient)
@@ -747,7 +1034,11 @@ private struct SQLiteRow {
       case SQLITE_INTEGER: .int64(sqlite3_column_int64(statement, index))
       case SQLITE_FLOAT: .double(sqlite3_column_double(statement, index))
       case SQLITE_TEXT:
-        .text(String(cString: sqlite3_column_text(statement, index)))
+        .text(
+          String(
+            decoding: UnsafeBufferPointer(
+              start: sqlite3_column_text(statement, index),
+              count: Int(sqlite3_column_bytes(statement, index))), as: UTF8.self))
       case SQLITE_BLOB:
         .blob(Self.blob(statement: statement, index: index))
       default: .null
@@ -793,6 +1084,11 @@ private struct SQLiteRow {
     guard case .text(let value) = values[index] else {
       throw ActivityVaultError.database("Expected SQLite text column \(index)")
     }
+    return value
+  }
+
+  func optionalBlob(_ index: Int) -> Data? {
+    guard case .blob(let value) = values[index] else { return nil }
     return value
   }
 

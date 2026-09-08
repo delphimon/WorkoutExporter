@@ -26,7 +26,7 @@ final class ActivityArchiveApplicationModel {
       if arguments.contains("--ui-testing-recovery") {
         return testingModel(bookmark: Data("invalid".utf8))
       }
-      if arguments.contains("--ui-testing-ready") {
+      if arguments.contains("--ui-testing-ready") || arguments.contains("--ui-testing-catalog") {
         let root = FileManager.default.temporaryDirectory.appending(
           path: "ActivityArchiveUITest-\(ProcessInfo.processInfo.processIdentifier)",
           directoryHint: .isDirectory
@@ -97,7 +97,20 @@ final class ActivityArchiveApplicationModel {
 
   private struct TestingActivityVaultOpener: ActivityVaultOpening {
     func open(url: URL, mode: VaultOpenMode) async throws -> ActivityVault {
-      try ActivityVault(rootURL: url, minimumFreeBytes: 0)
+      let vault = try ActivityVault(rootURL: url, minimumFreeBytes: 0)
+      if ProcessInfo.processInfo.arguments.contains("--ui-testing-catalog") {
+        let source = vault.layout.incoming.appending(path: "fixture.gpx")
+        try Data(
+          "<gpx><trk><name>Fixture Trail</name><trkseg><trkpt lat=\"47.1\" lon=\"-122.1\"/><trkpt lat=\"47.2\" lon=\"-122.2\"/></trkseg></trk></gpx>"
+            .utf8
+        ).write(to: source)
+        _ = try await vault.importArtifact(at: source)
+        _ = try await vault.importArtifact(at: source)
+        let rejected = vault.layout.incoming.appending(path: "rejected.gpx")
+        try Data("<malformed".utf8).write(to: rejected)
+        _ = try? await vault.importArtifact(at: rejected)
+      }
+      return vault
     }
   }
 #endif

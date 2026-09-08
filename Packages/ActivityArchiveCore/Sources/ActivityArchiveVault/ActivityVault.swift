@@ -120,46 +120,65 @@ public actor ActivityVault {
     return try await database.recoverInterruptedImports()
   }
 
-  public func integrityCheck() async throws -> ActivityVaultIntegrityReport {
+  /// Retains only the first 100 failed hashes per category; counts cover the full scan.
+  public func integrityCheck(
+    progress: @Sendable (Int) -> Void = { _ in }
+  ) async throws -> ActivityVaultIntegrityReport {
     try layout.validate()
-    let records = try await database.objectRecords()
+    var cursor: String?
+    var checked = 0
     var missing: [String] = []
     var corrupted: [String] = []
-    for record in records {
+    var missingCount = 0
+    var corruptCount = 0
+    while true {
       try Task.checkCancellation()
-      let url = try await objectStore.objectURL(for: record.hash)
-      if !FileManager.default.fileExists(atPath: url.path) {
-        missing.append(record.hash)
-        continue
-      }
-      do {
-        let values = try url.resourceValues(forKeys: [.fileSizeKey])
-        let actualByteLength = UInt64(max(0, values.fileSize ?? 0))
-        let hashMatches = try await objectStore.verify(hash: record.hash)
-        if actualByteLength != record.byteLength || !hashMatches {
-          corrupted.append(record.hash)
+      let records = try await database.objectRecordPage(after: cursor)
+      if records.isEmpty { break }
+      for record in records {
+        try Task.checkCancellation()
+        do {
+          let url = try await objectStore.objectURL(for: record.hash)
+          if !FileManager.default.fileExists(atPath: url.path) {
+            missingCount += 1
+            if missing.count < 100 { missing.append(record.hash) }
+          } else {
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            let matches = try await objectStore.verify(hash: record.hash)
+            if UInt64(max(0, values.fileSize ?? 0)) != record.byteLength || !matches {
+              corruptCount += 1
+              if corrupted.count < 100 { corrupted.append(record.hash) }
+            }
+          }
+        } catch is CancellationError {
+          throw CancellationError()
+        } catch {
+          corruptCount += 1
+          if corrupted.count < 100 { corrupted.append(record.hash) }
         }
-      } catch {
-        corrupted.append(record.hash)
+        checked += 1
+        cursor = record.hash
       }
+      progress(checked)
     }
+    try Task.checkCancellation()
     return ActivityVaultIntegrityReport(
-      checkedObjects: records.count,
-      missingObjects: missing,
-      corruptedObjects: corrupted,
-      databaseIntegrityMessages: try await database.integrityCheck()
-    )
+      checkedObjects: checked, missingObjects: missing,
+      corruptedObjects: corrupted, databaseIntegrityMessages: try await database.integrityCheck(),
+      missingObjectCount: missingCount, corruptedObjectCount: corruptCount)
+  }
+
+  public func availableCapacity() throws -> UInt64? {
+    let values = try layout.root.resourceValues(
+      forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+    return
+      (values.volumeAvailableCapacityForImportantUsage
+      ?? values.volumeAvailableCapacity.map(Int64.init))
+      .map { UInt64(max(0, $0)) }
   }
 
   public func preflightCapacity(additionalBytes: UInt64) throws {
-    let values = try layout.root.resourceValues(
-      forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]
-    )
-    let reportedCapacity =
-      values.volumeAvailableCapacityForImportantUsage
-      ?? values.volumeAvailableCapacity.map(Int64.init)
-    guard let reportedCapacity else { return }
-    let available = UInt64(max(0, reportedCapacity))
+    guard let available = try availableCapacity() else { return }
     let (required, overflow) = additionalBytes.addingReportingOverflow(minimumFreeBytes)
     guard !overflow, available >= required else {
       throw ActivityVaultError.insufficientSpace(

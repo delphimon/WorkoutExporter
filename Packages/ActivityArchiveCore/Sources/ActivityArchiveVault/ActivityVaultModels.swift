@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ActivityVaultSchema {
-  public static let currentVersion = 1
+  public static let currentVersion = 2
 }
 
 public enum ActivityVaultError: Error, Equatable, LocalizedError, Sendable {
@@ -147,7 +147,7 @@ public enum ActivityImportKind: String, Codable, CaseIterable, Sendable {
   case geoJSON
 }
 
-public enum ActivityImportStatus: String, Codable, Sendable {
+public enum ActivityImportStatus: String, Codable, CaseIterable, Sendable {
   case importing
   case imported
   case duplicate
@@ -324,6 +324,8 @@ public struct ActivityImportResult: Equatable, Sendable {
 }
 
 public struct ActivityVaultIntegrityReport: Equatable, Sendable {
+  public var missingObjectCount: Int
+  public var corruptedObjectCount: Int
   public var checkedObjects: Int
   public var missingObjects: [String]
   public var corruptedObjects: [String]
@@ -333,8 +335,12 @@ public struct ActivityVaultIntegrityReport: Equatable, Sendable {
     checkedObjects: Int,
     missingObjects: [String],
     corruptedObjects: [String],
-    databaseIntegrityMessages: [String]
+    databaseIntegrityMessages: [String],
+    missingObjectCount: Int? = nil,
+    corruptedObjectCount: Int? = nil
   ) {
+    self.missingObjectCount = missingObjectCount ?? missingObjects.count
+    self.corruptedObjectCount = corruptedObjectCount ?? corruptedObjects.count
     self.checkedObjects = checkedObjects
     self.missingObjects = missingObjects
     self.corruptedObjects = corruptedObjects
@@ -342,7 +348,7 @@ public struct ActivityVaultIntegrityReport: Equatable, Sendable {
   }
 
   public var isHealthy: Bool {
-    missingObjects.isEmpty && corruptedObjects.isEmpty
+    missingObjectCount == 0 && corruptedObjectCount == 0
       && databaseIntegrityMessages == ["ok"]
   }
 }
